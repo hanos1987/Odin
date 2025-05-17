@@ -31,6 +31,27 @@ intents.message_content = True
 intents.dm_messages = True
 bot = commands.Bot(command_prefix=config['prefix'], intents=intents, help_command=None)
 
+# Register bot-level commands in commands.json
+def register_bot_commands():
+    commands_to_register = {
+        "update": "Pulls Git updates and restarts (admin).",
+        "add_function": "Adds a new cog via DM (admin).",
+        "enable_function": "Enables a cog for the server (admin).",
+        "disable_function": "Disables a cog for the server (admin)."
+    }
+    try:
+        try:
+            with open('commands.json', 'r') as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            data = {"commands": {}}
+
+        data["commands"].update(commands_to_register)
+        with open('commands.json', 'w') as f:
+            json.dump(data, f, indent=4)
+    except Exception as e:
+        logger.error(f"Failed to register bot commands: {e}")
+
 # Ensure server_configs directory exists
 if not os.path.exists('./server_configs'):
     logger.warning("server_configs directory not found. Creating it.")
@@ -75,6 +96,8 @@ async def load_server_cogs(guild_id):
 @bot.event
 async def on_ready():
     logger.info(f'Logged in as {bot.user.name} ({bot.user.id})')
+    # Register bot commands
+    register_bot_commands()
     # Load only the base cog at startup
     if 'cogs.general' not in bot.extensions:
         try:
