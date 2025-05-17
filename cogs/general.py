@@ -1,9 +1,33 @@
 import discord
 from discord.ext import commands
+import json
 
 class General(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self._register_commands()
+
+    def _register_commands(self):
+        """Register this cog's commands in commands.json."""
+        commands_to_register = {
+            "ping": "Check the bot's latency.",
+            "info": "Display bot information.",
+            "help": "Shows the help message.",
+            "cmd_bank": "Lists all available commands with their descriptions."
+        }
+        try:
+            try:
+                with open('commands.json', 'r') as f:
+                    data = json.load(f)
+            except FileNotFoundError:
+                data = {"commands": {}}
+
+            # Update commands.json with this cog's commands
+            data["commands"].update(commands_to_register)
+            with open('commands.json', 'w') as f:
+                json.dump(data, f, indent=4)
+        except Exception as e:
+            print(f"Failed to register commands for General cog: {e}")
 
     @commands.command()
     async def ping(self, ctx):
@@ -35,14 +59,25 @@ class General(commands.Cog):
     @commands.command()
     async def cmd_bank(self, ctx):
         """Lists all available commands with their descriptions."""
+        # Load command descriptions from commands.json
+        try:
+            with open('commands.json', 'r') as f:
+                data = json.load(f)
+            command_descriptions = data.get("commands", {})
+        except FileNotFoundError:
+            await ctx.send("Error: commands.json not found.")
+            return
+        except json.JSONDecodeError:
+            await ctx.send("Error: commands.json is invalid.")
+            return
+
         embed = discord.Embed(title="Odin Command Bank", color=discord.Color.purple())
         
-        # Get all commands from loaded cogs
+        # Get all commands the user can run
         commands_list = []
         for command in self.bot.commands:
-            # Only include commands the user can use in this context
             if await command.can_run(ctx):
-                description = command.help or "No description available."
+                description = command_descriptions.get(command.name, "No description available.")
                 commands_list.append((command.name, description))
         
         # Sort commands alphabetically
