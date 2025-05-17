@@ -40,7 +40,8 @@ def register_bot_commands():
         "disable_function": "Disables a cog for the server (admin).",
         "logs": "Displays the odin.service logs up to the maximum allowable length (admin).",
         "install_deps": "Installs dependencies from requirements.txt within the venv and restarts (admin).",
-        "rename": "Renames a command in commands.json (admin)."
+        "rename": "Renames a command in commands.json (admin).",
+        "change_prefix": "Changes the bot's command prefix (admin)."
     }
     try:
         try:
@@ -62,7 +63,6 @@ if not os.path.exists('./server_configs'):
 
 # Load server-specific cogs
 async def load_server_cogs(guild_id):
-    # Always ensure the base 'general' cog is loaded
     if 'cogs.general' not in bot.extensions:
         try:
             await bot.load_extension('cogs.general')
@@ -70,14 +70,12 @@ async def load_server_cogs(guild_id):
         except Exception as e:
             logger.error(f"Failed to load base cog cogs.general: {e}")
 
-    # Load server-specific cogs
     config_path = f'./server_configs/{guild_id}.json'
     try:
         with open(config_path, 'r') as f:
             data = json.load(f)
         server_cogs = data.get('cogs', [])
     except FileNotFoundError:
-        # If no config exists, create a default one with no extra cogs
         server_cogs = []
         with open(config_path, 'w') as f:
             json.dump({"cogs": server_cogs}, f, indent=4)
@@ -85,10 +83,9 @@ async def load_server_cogs(guild_id):
         logger.error(f"Invalid JSON in {config_path}. Skipping server-specific cogs.")
         return
 
-    # Load cogs specified in the server's config
     for cog_name in server_cogs:
         cog = f'cogs.{cog_name}'
-        if cog != 'cogs.general' and cog not in bot.extensions:  # Avoid reloading the base cog
+        if cog != 'cogs.general' and cog not in bot.extensions:
             try:
                 await bot.load_extension(cog)
                 logger.info(f"Loaded server-specific cog for guild {guild_id}: {cog}")
@@ -99,9 +96,7 @@ async def load_server_cogs(guild_id):
 @bot.event
 async def on_ready():
     logger.info(f'Logged in as {bot.user.name} ({bot.user.id})')
-    # Register bot commands
     register_bot_commands()
-    # Load only the base cog at startup
     if 'cogs.general' not in bot.extensions:
         try:
             await bot.load_extension('cogs.general')
@@ -112,7 +107,7 @@ async def on_ready():
 # Before invoking a command, load the server's cogs
 @bot.before_invoke
 async def before_invoke(ctx):
-    if ctx.guild:  # Only load server cogs if the command is in a guild
+    if ctx.guild:
         await load_server_cogs(ctx.guild.id)
 
 # Error handling for commands
@@ -161,7 +156,6 @@ async def enable_function(ctx, cog_name: str):
     with open(config_path, 'w') as f:
         json.dump(data, f, indent=4)
 
-    # Load the cog immediately
     try:
         await bot.load_extension(f'cogs.{cog_name}')
         logger.info(f"Enabled and loaded cog for guild {ctx.guild.id}: cogs.{cog_name}")
@@ -204,7 +198,6 @@ async def disable_function(ctx, cog_name: str):
     with open(config_path, 'w') as f:
         json.dump(data, f, indent=4)
 
-    # Unload the cog if no other servers are using it
     cog = f'cogs.{cog_name}'
     still_in_use = False
     for guild in bot.guilds:
@@ -233,16 +226,13 @@ async def disable_function(ctx, cog_name: str):
 async def add_function(ctx, cog_name: str):
     """Initiates adding a new cog by DMing the invoker for the code, overwriting if it exists."""
     import re
-    # Validate cog name: letters, numbers, underscores, hyphens; no spaces or special chars
     if not re.match(r'^[a-zAZ0-9_-]+$', cog_name) or cog_name.startswith('.'):
         await ctx.send("Cog name can only contain letters, numbers, underscores, or hyphens, and cannot start with a period.")
         return
 
-    # Check if the cog is currently loaded
     cog_path = f'cogs.{cog_name}'
     was_loaded = cog_path in bot.extensions
 
-    # If the cog is loaded, unload it before overwriting
     if was_loaded:
         try:
             await bot.unload_extension(cog_path)
@@ -272,7 +262,6 @@ async def add_function(ctx, cog_name: str):
                 await ctx.author.send("The code you provided is empty. Please try again.")
                 return
 
-            # Save the code, overwriting if the file exists
             with open(f'./cogs/{cog_name}.py', 'w') as f:
                 f.write(code)
             logger.info(f'Saved (or overwrote) cog file: cogs/{cog_name}.py')
@@ -289,7 +278,6 @@ async def update(ctx):
     """Pulls the latest changes from the Git repository (origin/main), ensures local file structure matches, then restarts."""
     await ctx.send("Fetching and overwriting with latest changes from Git repository...")
     try:
-        # Step 1: Fetch the latest changes
         fetch_result = subprocess.run(
             ['git', 'fetch', 'origin', 'main'],
             cwd='/root/Discord-Bots/Odin',
@@ -301,7 +289,6 @@ async def update(ctx):
             await ctx.send(f"Git fetch failed:\n```\n{fetch_result.stderr}\n```")
             return
 
-        # Step 2: Reset to the fetched main branch, overwriting local changes
         reset_result = subprocess.run(
             ['git', 'reset', '--hard', 'origin/main'],
             cwd='/root/Discord-Bots/Odin',
@@ -313,7 +300,6 @@ async def update(ctx):
             await ctx.send(f"Git reset failed:\n```\n{reset_result.stderr}\n```")
             return
 
-        # Step 3: Clean untracked files and directories to match the repo
         clean_result = subprocess.run(
             ['git', 'clean', '-fd'],
             cwd='/root/Discord-Bots/Odin',
@@ -328,16 +314,13 @@ async def update(ctx):
             await ctx.send(f"Git clean failed:\n```\n{clean_result.stderr}\n```")
             return
 
-        # Step 4: Restart the bot
         await ctx.send("Restarting Odin to apply updates...")
         logger.info("Initiating bot restart after successful update.")
 
-        # Cleanly close the bot
         await bot.close()
         if bot.http:
             await bot.http.close()
 
-        # Restart the bot process
         import sys
         import os
         os.execv(sys.executable, [sys.executable] + sys.argv)
@@ -351,7 +334,6 @@ async def update(ctx):
 async def logs(ctx):
     """Displays the odin.service logs up to the maximum allowable length (admin)."""
     try:
-        # Fetch logs
         result = subprocess.run(
             ['journalctl', '-u', 'odin.service', '-n', '20', '--no-pager'],
             capture_output=True,
@@ -362,9 +344,8 @@ async def logs(ctx):
             if not logs:
                 await ctx.send("No logs found for odin.service.")
                 return
-            # Trim to 1900 characters, keeping the most recent logs
             if len(logs) > 1900:
-                logs = "..." + logs[-1900:]  # Keep the last 1900 characters
+                logs = "..." + logs[-1900:]
             await ctx.send(f"**Odin Service Logs**:\n```\n{logs}\n```")
         else:
             logger.error(f"Failed to fetch logs: {result.stderr}")
@@ -380,9 +361,7 @@ async def install_deps(ctx):
     """Installs dependencies from requirements.txt within the venv and restarts (admin)."""
     await ctx.send("Installing dependencies from requirements.txt within the virtual environment...")
     try:
-        # Path to the venv's pip executable
         venv_pip = '/root/Discord-Bots/Odin/venv/bin/pip'
-        # Run pip install -r requirements.txt using the venv's pip
         result = subprocess.run(
             [venv_pip, 'install', '-r', 'requirements.txt'],
             cwd='/root/Discord-Bots/Odin',
@@ -397,16 +376,13 @@ async def install_deps(ctx):
             await ctx.send(f"Failed to install dependencies:\n```\n{result.stderr}\n```")
             return
 
-        # Restart the bot
         await ctx.send("Restarting Odin to apply changes...")
         logger.info("Initiating bot restart after dependency installation.")
 
-        # Cleanly close the bot
         await bot.close()
         if bot.http:
             await bot.http.close()
 
-        # Restart the bot process
         import sys
         import os
         os.execv(sys.executable, [sys.executable] + sys.argv)
@@ -424,7 +400,6 @@ async def rename(ctx, old_name: str, new_name: str):
         await ctx.send("New command name can only contain letters, numbers, underscores, or hyphens.")
         return
 
-    # Load commands.json
     try:
         with open('commands.json', 'r') as f:
             data = json.load(f)
@@ -436,41 +411,34 @@ async def rename(ctx, old_name: str, new_name: str):
         await ctx.send("Error: commands.json is invalid.")
         return
 
-    # Check if the old command exists
     if old_name not in command_descriptions:
         await ctx.send(f"Command '{old_name}' not found in commands.json.")
         return
 
-    # Check if the new command name already exists
     if new_name in command_descriptions:
         await ctx.send(f"Command '{new_name}' already exists in commands.json.")
         return
 
-    # Map the command to its cog
     cog_name = None
     if old_name in ["ping", "info", "help", "cmd_bank"]:
         cog_name = "general"
-    elif old_name in ["update", "add_function", "enable_function", "disable_function", "logs", "install_deps", "rename"]:
-        cog_name = None  # Bot-level command
+    elif old_name in ["update", "add_function", "enable_function", "disable_function", "logs", "install_deps", "rename", "change_prefix"]:
+        cog_name = None
     elif old_name == "ai_addfunction":
         cog_name = "ai_addfunction"
 
-    # For cog commands, ensure the new name matches the cog file name
     if cog_name and cog_name != "general":
         if new_name != cog_name:
             await ctx.send(f"Command name must match the cog file name '{cog_name}'.py for non-general cogs.")
             return
 
-    # Perform the rename
     description = command_descriptions.pop(old_name)
     command_descriptions[new_name] = description
     data["commands"] = command_descriptions
 
-    # Save the updated commands.json
     with open('commands.json', 'w') as f:
         json.dump(data, f, indent=4)
 
-    # If the command is from a cog, reload the cog to apply the change
     if cog_name and cog_name != "general":
         try:
             if f'cogs.{cog_name}' in bot.extensions:
@@ -483,6 +451,52 @@ async def rename(ctx, old_name: str, new_name: str):
             await ctx.send(f"Renamed command '{old_name}' to '{new_name}', but failed to reload cog '{cog_name}': {str(e)}")
     else:
         await ctx.send(f"Renamed command '{old_name}' to '{new_name}'. No cog reload needed.")
+
+# Command to change the command prefix
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def change_prefix(ctx):
+    """Changes the bot's command prefix (admin)."""
+    # List of possible prefix characters
+    prefix_options = ['!', '@', '#', '$', '%']
+    
+    # Create the selection message
+    options_message = "Please select a new command prefix by replying with the number:\n"
+    for i, prefix in enumerate(prefix_options, 1):
+        options_message += f"{i}. {prefix}\n"
+    options_message += f"\nCurrent prefix: {bot.command_prefix}"
+
+    await ctx.send(options_message)
+
+    # Wait for the user's response
+    def check(msg):
+        return msg.author == ctx.author and msg.channel == ctx.channel and msg.content.isdigit()
+
+    try:
+        response = await bot.wait_for('message', check=check, timeout=60)
+        choice = int(response.content)
+
+        if 1 <= choice <= len(prefix_options):
+            new_prefix = prefix_options[choice - 1]
+            
+            # Update the bot's prefix
+            bot.command_prefix = new_prefix
+            
+            # Update config.json
+            try:
+                with open('config.json', 'r') as f:
+                    config_data = json.load(f)
+                config_data['prefix'] = new_prefix
+                with open('config.json', 'w') as f:
+                    json.dump(config_data, f, indent=4)
+                await ctx.send(f"Command prefix changed to `{new_prefix}`. Use `{new_prefix}help` for commands.")
+            except Exception as e:
+                logger.error(f"Failed to update config.json with new prefix: {e}")
+                await ctx.send(f"Changed prefix to `{new_prefix}`, but failed to save to config.json: {str(e)}")
+        else:
+            await ctx.send("Invalid selection. Please run the command again and choose a valid number.")
+    except asyncio.TimeoutError:
+        await ctx.send("Timed out waiting for your selection. Please run the command again.")
 
 # Run the bot
 async def main():
