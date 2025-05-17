@@ -29,7 +29,7 @@ except json.JSONDecodeError:
 intents = discord.Intents.default()
 intents.message_content = True
 intents.dm_messages = True
-bot = commands.Bot(command_prefix=config['prefix'], intents=intents)
+bot = commands.Bot(command_prefix=config['prefix'], intents=intents, help_command=None)
 
 # Ensure server_configs directory exists
 if not os.path.exists('./server_configs'):
