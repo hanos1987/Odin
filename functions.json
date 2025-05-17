@@ -1,5 +1,27 @@
 {
-    "cogs": [
-        "general"
-    ]
+    "cogs": {
+        "general": {
+            "commands": {
+                "ping": "Check the bot's latency.",
+                "info": "Display bot information.",
+                "help": "Shows the help message.",
+                "cmd_bank": "Lists all available commands with their descriptions."
+            }
+        },
+        "function_generator": {
+            "commands": {
+                "function_generator": "Generates a program from a text prompt using AI (admin)."
+            }
+        }
+    },
+    "bot_commands": {
+        "update": "Restarts the bot (admin).",
+        "add_function": "Adds a new cog via DM (admin).",
+        "enable_function": "Enables a cog for the server (admin).",
+        "disable_function": "Disables a cog for the server (admin).",
+        "logs": "Displays the odin.service logs up to the maximum allowable length (admin).",
+        "install_deps": "Installs dependencies from requirements.txt within the venv and restarts (admin).",
+        "rename": "Renames a command in commands.json (admin).",
+        "change_prefix": "Changes the bot's command prefix (admin)."
+    }
 }
