@@ -38,7 +38,8 @@ def register_bot_commands():
         "add_function": "Adds a new cog via DM (admin).",
         "enable_function": "Enables a cog for the server (admin).",
         "disable_function": "Disables a cog for the server (admin).",
-        "logs": "Displays the odin.service logs up to the maximum allowable length (admin)."
+        "logs": "Displays the odin.service logs up to the maximum allowable length (admin).",
+        "install_deps": "Installs dependencies from requirements.txt and restarts (admin)."
     }
     try:
         try:
@@ -232,7 +233,7 @@ async def add_function(ctx, cog_name: str):
     """Initiates adding a new cog by DMing the invoker for the code, overwriting if it exists."""
     import re
     # Validate cog name: letters, numbers, underscores, hyphens; no spaces or special chars
-    if not re.match(r'^[a-zA-Z0-9_-]+$', cog_name) or cog_name.startswith('.'):
+    if not re.match(r'^[a-zAZ0-9_-]+$', cog_name) or cog_name.startswith('.'):
         await ctx.send("Cog name can only contain letters, numbers, underscores, or hyphens, and cannot start with a period.")
         return
 
@@ -348,9 +349,9 @@ async def logs(ctx):
             if not logs:
                 await ctx.send("No logs found for odin.service.")
                 return
-            # Trim to 1900 characters to account for formatting
+            # Trim to 1900 characters, keeping the most recent logs
             if len(logs) > 1900:
-                logs = logs[:1900] + "... (trimmed)"
+                logs = "..." + logs[-1900:]  # Keep the last 1900 characters
             await ctx.send(f"**Odin Service Logs**:\n```\n{logs}\n```")
         else:
             logger.error(f"Failed to fetch logs: {result.stderr}")
@@ -358,6 +359,45 @@ async def logs(ctx):
     except Exception as e:
         logger.error(f"Error fetching logs: {e}")
         await ctx.send(f"Error fetching logs: {str(e)}")
+
+# Command to install dependencies from requirements.txt
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def install_deps(ctx):
+    """Installs dependencies from requirements.txt and restarts (admin)."""
+    await ctx.send("Installing dependencies from requirements.txt...")
+    try:
+        # Run pip install -r requirements.txt
+        result = subprocess.run(
+            ['pip', 'install', '-r', 'requirements.txt'],
+            cwd='/root/Discord-Bots/Odin',
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            logger.info("Dependencies installed successfully.")
+            await ctx.send(f"Dependencies installed successfully:\n```\n{result.stdout}\n```")
+        else:
+            logger.error(f"Failed to install dependencies: {result.stderr}")
+            await ctx.send(f"Failed to install dependencies:\n```\n{result.stderr}\n```")
+            return
+
+        # Restart the bot
+        await ctx.send("Restarting Odin to apply changes...")
+        logger.info("Initiating bot restart after dependency installation.")
+
+        # Cleanly close the bot
+        await bot.close()
+        if bot.http:
+            await bot.http.close()
+
+        # Restart the bot process
+        import sys
+        import os
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception as e:
+        logger.error(f"Error during dependency installation or restart: {e}")
+        await ctx.send(f"Error during dependency installation or restart: {str(e)}")
 
 # Run the bot
 async def main():
