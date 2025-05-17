@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 import json
+import os
 
 class General(commands.Cog):
     def __init__(self, bot):
@@ -71,22 +72,50 @@ class General(commands.Cog):
             await ctx.send("Error: commands.json is invalid.")
             return
 
+        # Load server-specific cog configuration
+        server_cogs = []
+        if ctx.guild:
+            config_path = f'./server_configs/{ctx.guild.id}.json'
+            try:
+                with open(config_path, 'r') as f:
+                    config_data = json.load(f)
+                server_cogs = config_data.get('cogs', [])
+            except FileNotFoundError:
+                server_cogs = []
+
         embed = discord.Embed(title="Odin Command Bank", color=discord.Color.purple())
         
-        # Get all commands the user can run
+        # Get all commands from commands.json
         commands_list = []
-        for command in self.bot.commands:
-            if await command.can_run(ctx):
-                description = command_descriptions.get(command.name, "No description available.")
-                commands_list.append((command.name, description))
+        for cmd_name, cmd_desc in command_descriptions.items():
+            # Determine if the command's cog is enabled
+            # Map commands to their cogs (based on Odin's structure)
+            cog_name = None
+            if cmd_name in ["ping", "info", "help", "cmd_bank"]:
+                cog_name = "general"  # General cog commands
+            elif cmd_name in ["update", "add_function", "enable_function", "disable_function", "logs", "install_deps"]:
+                cog_name = None  # Bot-level commands (not in a cog)
+            elif cmd_name == "generate_program":
+                cog_name = "program_generator"  # ProgramGenerator cog
+            # Add more mappings as new cogs are added
+
+            # Determine status
+            if cog_name is None:
+                status = ""  # Bot-level commands are always available
+            elif cog_name == "general":
+                status = "* (enabled)*"  # General cog is always enabled
+            else:
+                status = "* (enabled)*" if cog_name in server_cogs else "* (disabled)*"
+
+            commands_list.append((cmd_name, cmd_desc, status))
         
         # Sort commands alphabetically
         commands_list.sort(key=lambda x: x[0])
         
         # Add commands to the embed
-        for cmd_name, cmd_desc in commands_list:
+        for cmd_name, cmd_desc, status in commands_list:
             embed.add_field(
-                name=f"{ctx.prefix}{cmd_name}",
+                name=f"{ctx.prefix}{cmd_name} {status}",
                 value=cmd_desc,
                 inline=False
             )
