@@ -27,62 +27,67 @@ except json.JSONDecodeError:
 
 # Bot setup with intents
 intents = discord.Intents.default()
-intents.message_content = True  # Enable message content intent for commands
-intents.dm_messages = True  # Enable DM message events
+intents.message_content = True
+intents.dm_messages = True
 bot = commands.Bot(command_prefix=config['prefix'], intents=intents)
 
-# Load cogs from functions.json
-async def load_cogs_from_json():
+# Ensure server_configs directory exists
+if not os.path.exists('./server_configs'):
+    logger.warning("server_configs directory not found. Creating it.")
+    os.makedirs('./server_configs')
+
+# Load server-specific cogs
+async def load_server_cogs(guild_id):
+    # Always ensure the base 'general' cog is loaded
+    if 'cogs.general' not in bot.extensions:
+        try:
+            await bot.load_extension('cogs.general')
+            logger.info("Loaded base cog: cogs.general")
+        except Exception as e:
+            logger.error(f"Failed to load base cog cogs.general: {e}")
+
+    # Load server-specific cogs
+    config_path = f'./server_configs/{guild_id}.json'
     try:
-        with open('functions.json', 'r') as f:
+        with open(config_path, 'r') as f:
             data = json.load(f)
-        cogs_list = data.get('cogs', [])
+        server_cogs = data.get('cogs', [])
     except FileNotFoundError:
-        logger.error("functions.json not found. Creating a default one.")
-        cogs_list = []
-        with open('functions.json', 'w') as f:
-            json.dump({"cogs": cogs_list}, f, indent=4)
+        # If no config exists, create a default one with no extra cogs
+        server_cogs = []
+        with open(config_path, 'w') as f:
+            json.dump({"cogs": server_cogs}, f, indent=4)
     except json.JSONDecodeError:
-        logger.error("functions.json is not a valid JSON file.")
+        logger.error(f"Invalid JSON in {config_path}. Skipping server-specific cogs.")
         return
 
-    # Ensure cogs directory exists
-    if not os.path.exists('./cogs'):
-        logger.warning("Cogs directory not found. Creating it.")
-        os.makedirs('./cogs')
-
-    # Track currently loaded cogs
-    currently_loaded = set(bot.extensions.keys())
-    desired_cogs = set(f'cogs.{cog}' for cog in cogs_list)
-
-    # Unload cogs that are no longer in functions.json
-    for cog in currently_loaded:
-        if cog not in desired_cogs and cog.startswith('cogs.'):
-            try:
-                await bot.unload_extension(cog)
-                logger.info(f'Unloaded cog: {cog}')
-            except Exception as e:
-                logger.error(f'Failed to unload cog {cog}: {e}')
-
-    # Load or reload cogs from functions.json
-    for cog_name in cogs_list:
+    # Load cogs specified in the server's config
+    for cog_name in server_cogs:
         cog = f'cogs.{cog_name}'
-        try:
-            # If cog is already loaded, reload it
-            if cog in bot.extensions:
-                await bot.reload_extension(cog)
-                logger.info(f'Reloaded cog: {cog}')
-            else:
+        if cog != 'cogs.general' and cog not in bot.extensions:  # Avoid reloading the base cog
+            try:
                 await bot.load_extension(cog)
-                logger.info(f'Loaded cog: {cog}')
-        except Exception as e:
-            logger.error(f'Failed to load/reload cog {cog}: {e}')
+                logger.info(f"Loaded server-specific cog for guild {guild_id}: {cog}")
+            except Exception as e:
+                logger.error(f"Failed to load server-specific cog {cog} for guild {guild_id}: {e}")
 
-# On ready event
+# On ready event: Load general cog only initially
 @bot.event
 async def on_ready():
     logger.info(f'Logged in as {bot.user.name} ({bot.user.id})')
-    await load_cogs_from_json()
+    # Load only the base cog at startup
+    if 'cogs.general' not in bot.extensions:
+        try:
+            await bot.load_extension('cogs.general')
+            logger.info("Loaded base cog: cogs.general")
+        except Exception as e:
+            logger.error(f"Failed to load base cog cogs.general: {e}")
+
+# Before invoking a command, load the server's cogs
+@bot.before_invoke
+async def before_invoke(ctx):
+    if ctx.guild:  # Only load server cogs if the command is in a guild
+        await load_server_cogs(ctx.guild.id)
 
 # Error handling for commands
 @bot.event
@@ -93,21 +98,109 @@ async def on_command_error(ctx, error):
         logger.error(f'Error in command {ctx.command}: {error}')
         await ctx.send("An error occurred while processing the command.")
 
-# Command to update cogs while the bot is running
+# Command to enable a cog for the server
 @bot.command()
 @commands.has_permissions(administrator=True)
-async def function_update(ctx):
-    """Reloads cogs based on functions.json."""
-    await ctx.send("Updating cogs from functions.json...")
-    await load_cogs_from_json()
-    await ctx.send("Cog update complete!")
+async def enable_function(ctx, cog_name: str):
+    """Enables a cog for this server."""
+    if not ctx.guild:
+        await ctx.send("This command can only be used in a server.")
+        return
+    if not cog_name.isalnum():
+        await ctx.send("Cog name must be alphanumeric (letters and numbers only).")
+        return
+    if not os.path.exists(f'./cogs/{cog_name}.py'):
+        await ctx.send(f"No cog named '{cog_name}' exists in the cogs directory.")
+        return
+
+    config_path = f'./server_configs/{ctx.guild.id}.json'
+    try:
+        with open(config_path, 'r') as f:
+            data = json.load(f)
+        server_cogs = data.get('cogs', [])
+    except FileNotFoundError:
+        server_cogs = []
+        data = {"cogs": server_cogs}
+
+    if cog_name == "general":
+        await ctx.send("The 'general' cog is always enabled for all servers.")
+        return
+    if cog_name in server_cogs:
+        await ctx.send(f"Cog '{cog_name}' is already enabled for this server.")
+        return
+
+    server_cogs.append(cog_name)
+    data['cogs'] = server_cogs
+    with open(config_path, 'w') as f:
+        json.dump(data, f, indent=4)
+
+    # Load the cog immediately
+    try:
+        await bot.load_extension(f'cogs.{cog_name}')
+        logger.info(f"Enabled and loaded cog for guild {ctx.guild.id}: cogs.{cog_name}")
+        await ctx.send(f"Enabled and loaded cog '{cog_name}' for this server.")
+    except Exception as e:
+        logger.error(f"Failed to load cog {cog_name} for guild {ctx.guild.id}: {e}")
+        await ctx.send(f"Failed to load cog '{cog_name}'. Check the code for errors.")
+
+# Command to disable a cog for the server
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def disable_function(ctx, cog_name: str):
+    """Disables a cog for this server."""
+    if not ctx.guild:
+        await ctx.send("This command can only be used in a server.")
+        return
+    if cog_name == "general":
+        await ctx.send("The 'general' cog cannot be disabled.")
+        return
+
+    config_path = f'./server_configs/{ctx.guild.id}.json'
+    try:
+        with open(config_path, 'r') as f:
+            data = json.load(f)
+        server_cogs = data.get('cogs', [])
+    except FileNotFoundError:
+        await ctx.send(f"Cog '{cog_name}' is not enabled for this server.")
+        return
+
+    if cog_name not in server_cogs:
+        await ctx.send(f"Cog '{cog_name}' is not enabled for this server.")
+        return
+
+    server_cogs.remove(cog_name)
+    data['cogs'] = server_cogs
+    with open(config_path, 'w') as f:
+        json.dump(data, f, indent=4)
+
+    # Unload the cog if no other servers are using it
+    cog = f'cogs.{cog_name}'
+    still_in_use = False
+    for guild in bot.guilds:
+        guild_config_path = f'./server_configs/{guild.id}.json'
+        try:
+            with open(guild_config_path, 'r') as f:
+                guild_data = json.load(f)
+            if cog_name in guild_data.get('cogs', []):
+                still_in_use = True
+                break
+        except FileNotFoundError:
+            continue
+
+    if not still_in_use and cog in bot.extensions:
+        try:
+            await bot.unload_extension(cog)
+            logger.info(f"Unloaded cog {cog} as it is no longer in use by any server.")
+        except Exception as e:
+            logger.error(f"Failed to unload cog {cog}: {e}")
+
+    await ctx.send(f"Disabled cog '{cog_name}' for this server.")
 
 # Command to add a new cog via DM
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def add_function(ctx, cog_name: str):
     """Initiates adding a new cog by DMing the invoker for the code."""
-    # Validate cog name
     if not cog_name.isalnum():
         await ctx.send("Cog name must be alphanumeric (letters and numbers only).")
         return
@@ -115,7 +208,6 @@ async def add_function(ctx, cog_name: str):
         await ctx.send(f"A cog named '{cog_name}' already exists. Choose a different name.")
         return
 
-    # DM the invoker
     try:
         await ctx.author.send(f"Please reply with the `.py` code for the cog named '{cog_name}'. Wrap the code in triple backticks (```) like this:\n```\n# Your code here\n```")
         await ctx.send("I’ve sent you a DM. Please reply there with the cog code.")
@@ -123,51 +215,23 @@ async def add_function(ctx, cog_name: str):
         await ctx.send("I couldn’t DM you. Please enable DMs from server members.")
         return
 
-    # Wait for the invoker's reply in DM
     def check(msg):
         return msg.author == ctx.author and isinstance(msg.channel, discord.DMChannel)
 
     try:
-        msg = await bot.wait_for('message', check=check, timeout=300)  # 5-minute timeout
+        msg = await bot.wait_for('message', check=check, timeout=300)
         content = msg.content.strip()
         
-        # Check if the message contains code wrapped in triple backticks
         if content.startswith('```') and content.endswith('```'):
-            # Extract the code (remove the backticks)
             code = content[3:-3].strip()
             if not code:
                 await ctx.author.send("The code you provided is empty. Please try again.")
                 return
 
-            # Save the code to a file in the cogs directory
             with open(f'./cogs/{cog_name}.py', 'w') as f:
                 f.write(code)
             logger.info(f'Saved new cog file: cogs/{cog_name}.py')
-
-            # Update functions.json
-            try:
-                with open('functions.json', 'r') as f:
-                    data = json.load(f)
-                cogs_list = data.get('cogs', [])
-                if cog_name not in cogs_list:
-                    cogs_list.append(cog_name)
-                    data['cogs'] = cogs_list
-                    with open('functions.json', 'w') as f:
-                        json.dump(data, f, indent=4)
-                logger.info(f'Updated functions.json with new cog: {cog_name}')
-            except Exception as e:
-                logger.error(f'Failed to update functions.json: {e}')
-                await ctx.author.send("Failed to update functions.json. Cog file saved, but you’ll need to manually add it to functions.json.")
-                return
-
-            # Load the new cog
-            try:
-                await bot.load_extension(f'cogs.{cog_name}')
-                logger.info(f'Loaded new cog: cogs.{cog_name}')
-                await ctx.author.send(f"Successfully added and loaded the cog '{cog_name}'!")
-            except Exception as e:
-                logger.error(f'Failed to load new cog {cog_name}: {e}')
-                await ctx.author.send(f"Failed to load the cog '{cog_name}'. Check the code for errors. The file has been saved to the cogs directory.")
+            await ctx.author.send(f"Cog '{cog_name}' has been added. Use `!enable_function {cog_name}` in a server to enable it.")
         else:
             await ctx.author.send("Please wrap your code in triple backticks (```). Try again.")
     except asyncio.TimeoutError:
@@ -180,20 +244,15 @@ async def update(ctx):
     """Pulls the latest changes from the Git repository (origin/main)."""
     await ctx.send("Pulling updates from Git repository...")
     try:
-        # Run git pull origin main in the bot's directory
         result = subprocess.run(
             ['git', 'pull', 'origin', 'main'],
-            cwd='/root/Discord-Bots/Odin',  # Ensure this is the correct path
+            cwd='/root/Discord-Bots/Odin',
             capture_output=True,
             text=True
         )
         if result.returncode == 0:
             logger.info("Git pull successful.")
             await ctx.send(f"Git pull successful:\n```\n{result.stdout}\n```")
-            # Reload cogs to apply any changes
-            await ctx.send("Reloading cogs...")
-            await load_cogs_from_json()
-            await ctx.send("Cog reload complete!")
         else:
             logger.error(f"Git pull failed: {result.stderr}")
             await ctx.send(f"Git pull failed:\n```\n{result.stderr}\n```")
