@@ -34,12 +34,13 @@ bot = commands.Bot(command_prefix=config['prefix'], intents=intents, help_comman
 # Register bot-level commands in commands.json
 def register_bot_commands():
     commands_to_register = {
-        "update": "Pulls Git updates and restarts (admin).",
+        "update": "Pulls Git updates, ensures local file structure matches, and restarts (admin).",
         "add_function": "Adds a new cog via DM (admin).",
         "enable_function": "Enables a cog for the server (admin).",
         "disable_function": "Disables a cog for the server (admin).",
         "logs": "Displays the odin.service logs up to the maximum allowable length (admin).",
-        "install_deps": "Installs dependencies from requirements.txt within the venv and restarts (admin)."
+        "install_deps": "Installs dependencies from requirements.txt within the venv and restarts (admin).",
+        "rename": "Renames a command in commands.json (admin)."
     }
     try:
         try:
@@ -281,11 +282,11 @@ async def add_function(ctx, cog_name: str):
     except asyncio.TimeoutError:
         await ctx.author.send("Timed out waiting for your reply. Please use `!add_function` again.")
 
-# Command to pull updates from Git
+# Command to pull updates from Git and ensure local file structure matches
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def update(ctx):
-    """Pulls the latest changes from the Git repository (origin/main), overwriting local changes, then restarts."""
+    """Pulls the latest changes from the Git repository (origin/main), ensures local file structure matches, then restarts."""
     await ctx.send("Fetching and overwriting with latest changes from Git repository...")
     try:
         # Step 1: Fetch the latest changes
@@ -307,15 +308,27 @@ async def update(ctx):
             capture_output=True,
             text=True
         )
-        if reset_result.returncode == 0:
-            logger.info("Git overwrite successful.")
-            await ctx.send(f"Git overwrite successful:\n```\n{reset_result.stdout}\n```")
-        else:
+        if reset_result.returncode != 0:
             logger.error(f"Git reset failed: {reset_result.stderr}")
             await ctx.send(f"Git reset failed:\n```\n{reset_result.stderr}\n```")
             return
 
-        # Step 3: Restart the bot
+        # Step 3: Clean untracked files and directories to match the repo
+        clean_result = subprocess.run(
+            ['git', 'clean', '-fd'],
+            cwd='/root/Discord-Bots/Odin',
+            capture_output=True,
+            text=True
+        )
+        if clean_result.returncode == 0:
+            logger.info("Git clean successful.")
+            await ctx.send(f"Local file structure synchronized with repository:\n```\n{clean_result.stdout}\n```")
+        else:
+            logger.error(f"Git clean failed: {clean_result.stderr}")
+            await ctx.send(f"Git clean failed:\n```\n{clean_result.stderr}\n```")
+            return
+
+        # Step 4: Restart the bot
         await ctx.send("Restarting Odin to apply updates...")
         logger.info("Initiating bot restart after successful update.")
 
@@ -329,8 +342,8 @@ async def update(ctx):
         import os
         os.execv(sys.executable, [sys.executable] + sys.argv)
     except Exception as e:
-        logger.error(f"Error during git overwrite or restart: {e}")
-        await ctx.send(f"Error during git overwrite or restart: {str(e)}")
+        logger.error(f"Error during git update or restart: {e}")
+        await ctx.send(f"Error during git update or restart: {str(e)}")
 
 # Command to display odin.service logs up to the maximum allowable length
 @bot.command()
@@ -400,6 +413,76 @@ async def install_deps(ctx):
     except Exception as e:
         logger.error(f"Error during dependency installation or restart: {e}")
         await ctx.send(f"Error during dependency installation or restart: {str(e)}")
+
+# Command to rename a command in commands.json
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def rename(ctx, old_name: str, new_name: str):
+    """Renames a command in commands.json (admin)."""
+    import re
+    if not re.match(r'^[a-zA-Z0-9_-]+$', new_name):
+        await ctx.send("New command name can only contain letters, numbers, underscores, or hyphens.")
+        return
+
+    # Load commands.json
+    try:
+        with open('commands.json', 'r') as f:
+            data = json.load(f)
+        command_descriptions = data.get("commands", {})
+    except FileNotFoundError:
+        await ctx.send("Error: commands.json not found.")
+        return
+    except json.JSONDecodeError:
+        await ctx.send("Error: commands.json is invalid.")
+        return
+
+    # Check if the old command exists
+    if old_name not in command_descriptions:
+        await ctx.send(f"Command '{old_name}' not found in commands.json.")
+        return
+
+    # Check if the new command name already exists
+    if new_name in command_descriptions:
+        await ctx.send(f"Command '{new_name}' already exists in commands.json.")
+        return
+
+    # Map the command to its cog
+    cog_name = None
+    if old_name in ["ping", "info", "help", "cmd_bank"]:
+        cog_name = "general"
+    elif old_name in ["update", "add_function", "enable_function", "disable_function", "logs", "install_deps", "rename"]:
+        cog_name = None  # Bot-level command
+    elif old_name == "ai_addfunction":
+        cog_name = "ai_addfunction"
+
+    # For cog commands, ensure the new name matches the cog file name
+    if cog_name and cog_name != "general":
+        if new_name != cog_name:
+            await ctx.send(f"Command name must match the cog file name '{cog_name}'.py for non-general cogs.")
+            return
+
+    # Perform the rename
+    description = command_descriptions.pop(old_name)
+    command_descriptions[new_name] = description
+    data["commands"] = command_descriptions
+
+    # Save the updated commands.json
+    with open('commands.json', 'w') as f:
+        json.dump(data, f, indent=4)
+
+    # If the command is from a cog, reload the cog to apply the change
+    if cog_name and cog_name != "general":
+        try:
+            if f'cogs.{cog_name}' in bot.extensions:
+                await bot.unload_extension(f'cogs.{cog_name}')
+                await bot.load_extension(f'cogs.{cog_name}')
+                logger.info(f"Reloaded cog {cog_name} after renaming command.")
+            await ctx.send(f"Renamed command '{old_name}' to '{new_name}'. Cog '{cog_name}' reloaded if enabled.")
+        except Exception as e:
+            logger.error(f"Failed to reload cog {cog_name}: {e}")
+            await ctx.send(f"Renamed command '{old_name}' to '{new_name}', but failed to reload cog '{cog_name}': {str(e)}")
+    else:
+        await ctx.send(f"Renamed command '{old_name}' to '{new_name}'. No cog reload needed.")
 
 # Run the bot
 async def main():
