@@ -39,7 +39,7 @@ def register_bot_commands():
         "enable_function": "Enables a cog for the server (admin).",
         "disable_function": "Disables a cog for the server (admin).",
         "logs": "Displays the odin.service logs up to the maximum allowable length (admin).",
-        "install_deps": "Installs dependencies from requirements.txt and restarts (admin)."
+        "install_deps": "Installs dependencies from requirements.txt within the venv and restarts (admin)."
     }
     try:
         try:
@@ -360,16 +360,18 @@ async def logs(ctx):
         logger.error(f"Error fetching logs: {e}")
         await ctx.send(f"Error fetching logs: {str(e)}")
 
-# Command to install dependencies from requirements.txt
+# Command to install dependencies from requirements.txt within the venv
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def install_deps(ctx):
-    """Installs dependencies from requirements.txt and restarts (admin)."""
-    await ctx.send("Installing dependencies from requirements.txt...")
+    """Installs dependencies from requirements.txt within the venv and restarts (admin)."""
+    await ctx.send("Installing dependencies from requirements.txt within the virtual environment...")
     try:
-        # Run pip install -r requirements.txt
+        # Path to the venv's pip executable
+        venv_pip = '/root/Discord-Bots/Odin/venv/bin/pip'
+        # Run pip install -r requirements.txt using the venv's pip
         result = subprocess.run(
-            ['pip', 'install', '-r', 'requirements.txt'],
+            [venv_pip, 'install', '-r', 'requirements.txt'],
             cwd='/root/Discord-Bots/Odin',
             capture_output=True,
             text=True
