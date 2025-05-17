@@ -31,6 +31,9 @@ intents.message_content = True
 intents.dm_messages = True
 bot = commands.Bot(command_prefix=config['prefix'], intents=intents, help_command=None)
 
+# Your Discord user ID (replace with your actual user ID)
+ALLOWED_USER_ID = 123456789012345678  # Replace with your Discord user ID
+
 # Register bot-level commands in functions.json
 def register_bot_commands():
     commands_to_register = {
@@ -42,7 +45,8 @@ def register_bot_commands():
         "install_deps": "Installs dependencies from requirements.txt within the venv and restarts (admin).",
         "rename": "Renames a command in functions.json (admin).",
         "change_prefix": "Changes the bot's command prefix (admin).",
-        "generate_cog": "Placeholder for generating predefined cog files on the server (admin)."
+        "generate_cog": "Placeholder for generating predefined cog files on the server (admin).",
+        "execute": "Executes a shell command on the server (admin, restricted)."
     }
     try:
         try:
@@ -411,7 +415,7 @@ async def rename(ctx, old_name: str, new_name: str):
 
     if old_name in ["ping", "info", "help", "cmd_bank"]:
         cog_name = "general"
-    elif old_name in ["update", "add_function", "enable_function", "disable_function", "logs", "install_deps", "rename", "change_prefix", "generate_cog"]:
+    elif old_name in ["update", "add_function", "enable_function", "disable_function", "logs", "install_deps", "rename", "change_prefix", "generate_cog", "execute"]:
         cog_name = None
     elif old_name == "function_generator":
         cog_name = "function_generator"
@@ -493,6 +497,63 @@ async def generate_cog(ctx, cog_name: str):
         return
 
     await ctx.send("This command is a placeholder for generating predefined cogs. No cogs are currently available for automatic generation. Use `!add_function` to create custom cogs.")
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def execute(ctx, *, command: str):
+    """Executes a shell command on the server (admin, restricted)."""
+    # Restrict to the allowed user ID
+    if ctx.author.id != ALLOWED_USER_ID:
+        await ctx.send("Sorry, you are not authorized to use this command.")
+        return
+
+    if not command:
+        await ctx.send("Please provide a command to execute.")
+        return
+
+    # Log the command execution attempt
+    logger.info(f"Executing command '{command}' on behalf of user {ctx.author.id}")
+
+    try:
+        # Execute the command with a timeout of 10 seconds
+        result = subprocess.run(
+            command,
+            shell=True,
+            cwd='/root/Discord-Bots/Odin',
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+
+        # Capture output
+        output = result.stdout
+        error = result.stderr
+
+        # Combine output and error (if any)
+        full_output = ""
+        if output:
+            full_output += output
+        if error:
+            full_output += error
+
+        # Trim output to fit Discord's 2000-character limit
+        if not full_output:
+            full_output = "Command executed, but no output was returned."
+        if len(full_output) > 1900:
+            full_output = "..." + full_output[-1900:]
+
+        await ctx.send(f"**Command Output**:\n```\n{full_output}\n```")
+        logger.info(f"Command '{command}' executed successfully with output length: {len(full_output)}")
+
+    except subprocess.TimeoutExpired:
+        await ctx.send("Command execution timed out after 10 seconds.")
+        logger.error(f"Command '{command}' timed out after 10 seconds.")
+    except subprocess.SubprocessError as e:
+        await ctx.send(f"Error executing command: {str(e)}")
+        logger.error(f"Error executing command '{command}': {str(e)}")
+    except Exception as e:
+        await ctx.send(f"Unexpected error: {str(e)}")
+        logger.error(f"Unexpected error executing command '{command}': {str(e)}")
 
 async def main():
     try:
