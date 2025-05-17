@@ -1,1 +1,12 @@
-
+{
+    "commands": {
+        "ping": "Check the bot's latency.",
+        "info": "Display bot information.",
+        "help": "Shows the help message.",
+        "cmd_bank": "Lists all available commands with their descriptions.",
+        "update": "Pulls Git updates and restarts (admin).",
+        "add_function": "Adds a new cog via DM (admin).",
+        "enable_function": "Enables a cog for the server (admin).",
+        "disable_function": "Disables a cog for the server (admin)."
+    }
+}
