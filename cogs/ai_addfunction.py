@@ -2,13 +2,10 @@ import discord
 from discord.ext import commands
 import json
 import logging
-import os
-from dotenv import load_dotenv
 import aiohttp
 
-# Load environment variables from /root/Discord_Bots/.env
-load_dotenv('/root/Discord_Bots/.env')
-XAI_API_KEY = os.getenv('XAI_API_KEY')
+# Hardcoded API key (remove this if using .env)
+XAI_API_KEY = "xai-Yn03aXTWHiSFlPTNBtASqxVhmlhGj65cXK1KGGP4bFrXItyO39DTu3Sp9FJCZp7StDktELnVTqKmAeEp"  # Replace with your key
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -19,7 +16,7 @@ class AiAddFunction(commands.Cog):
         self.session = None
         # Validate API key presence
         if not XAI_API_KEY:
-            logger.error("XAI_API_KEY not found in .env file.")
+            logger.error("XAI_API_KEY is not set.")
         self._register_commands()
 
     def _register_commands(self):
@@ -50,8 +47,7 @@ class AiAddFunction(commands.Cog):
             self.session = aiohttp.ClientSession()
 
         try:
-            # Updated endpoint (confirm with xAI API docs: https://x.ai/api)
-            url = "https://api.x.ai/v1/completions"  # Likely endpoint
+            url = "https://api.x.ai/v1/completions"
             headers = {
                 "Authorization": f"Bearer {XAI_API_KEY}",
                 "Content-Type": "application/json"
@@ -59,7 +55,7 @@ class AiAddFunction(commands.Cog):
             payload = {
                 "prompt": f"Generate a program: {prompt}",
                 "max_tokens": 1000,
-                "model": "grok-3"  # Adjust based on xAI's available models
+                "model": "grok-3"
             }
 
             logger.info(f"Sending request to xAI API with prompt: {prompt}")
@@ -71,7 +67,6 @@ class AiAddFunction(commands.Cog):
                 
                 data = await response.json()
                 logger.info(f"xAI API response: {data}")
-                # Extract the generated code (adjust based on actual API response structure)
                 generated_code = data.get("choices", [{}])[0].get("text", "").strip()
                 return generated_code if generated_code else None
         except Exception as e:
@@ -86,13 +81,11 @@ class AiAddFunction(commands.Cog):
             await ctx.send("Please provide a prompt to generate a program.")
             return
 
-        # Call the xAI API to generate the code
         generated_code = await self._call_ai_model(prompt)
         if not generated_code:
             await ctx.send("Failed to generate the program. Check the API key and server logs for details.")
             return
 
-        # Ensure the output fits within Discord's 2000-character limit
         if len(generated_code) > 1900:
             parts = [generated_code[i:i+1900] for i in range(0, len(generated_code), 1900)]
             for i, part in enumerate(parts, 1):
@@ -101,7 +94,6 @@ class AiAddFunction(commands.Cog):
             await ctx.send(f"**Generated Program**:\n```\n{generated_code}\n```")
 
     async def cog_unload(self):
-        """Clean up the aiohttp session when the cog is unloaded."""
         if self.session:
             await self.session.close()
 
