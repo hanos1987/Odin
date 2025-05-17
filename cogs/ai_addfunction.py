@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 class AiAddFunction(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.session = None
         # Validate API key presence
         if not XAI_API_KEY:
             logger.error("XAI_API_KEY not found in .env file.")
@@ -45,32 +46,34 @@ class AiAddFunction(commands.Cog):
             logger.error("No XAI_API_KEY provided.")
             return None
 
-        try:
-            async with aiohttp.ClientSession() as session:
-                # Updated endpoint (confirm with xAI API docs: https://x.ai/api)
-                url = "https://api.x.ai/v1/completions"  # Likely endpoint
-                headers = {
-                    "Authorization": f"Bearer {XAI_API_KEY}",
-                    "Content-Type": "application/json"
-                }
-                payload = {
-                    "prompt": f"Generate a program: {prompt}",
-                    "max_tokens": 1000,
-                    "model": "grok-3"  # Adjust based on xAI's available models
-                }
+        if not self.session:
+            self.session = aiohttp.ClientSession()
 
-                logger.info(f"Sending request to xAI API with prompt: {prompt}")
-                async with session.post(url, headers=headers, json=payload) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        logger.error(f"xAI API error: {response.status} - {error_text}")
-                        return None
-                    
-                    data = await response.json()
-                    logger.info(f"xAI API response: {data}")
-                    # Extract the generated code (adjust based on actual API response structure)
-                    generated_code = data.get("choices", [{}])[0].get("text", "").strip()
-                    return generated_code if generated_code else None
+        try:
+            # Updated endpoint (confirm with xAI API docs: https://x.ai/api)
+            url = "https://api.x.ai/v1/completions"  # Likely endpoint
+            headers = {
+                "Authorization": f"Bearer {XAI_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "prompt": f"Generate a program: {prompt}",
+                "max_tokens": 1000,
+                "model": "grok-3"  # Adjust based on xAI's available models
+            }
+
+            logger.info(f"Sending request to xAI API with prompt: {prompt}")
+            async with self.session.post(url, headers=headers, json=payload) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"xAI API error: {response.status} - {error_text}")
+                    return None
+                
+                data = await response.json()
+                logger.info(f"xAI API response: {data}")
+                # Extract the generated code (adjust based on actual API response structure)
+                generated_code = data.get("choices", [{}])[0].get("text", "").strip()
+                return generated_code if generated_code else None
         except Exception as e:
             logger.error(f"xAI API request failed: {str(e)}")
             return None
@@ -96,6 +99,11 @@ class AiAddFunction(commands.Cog):
                 await ctx.send(f"**Generated Program (Part {i}/{len(parts)})**:\n```\n{part}\n```")
         else:
             await ctx.send(f"**Generated Program**:\n```\n{generated_code}\n```")
+
+    async def cog_unload(self):
+        """Clean up the aiohttp session when the cog is unloaded."""
+        if self.session:
+            await self.session.close()
 
 async def setup(bot):
     await bot.add_cog(AiAddFunction(bot))
