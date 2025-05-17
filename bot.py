@@ -38,7 +38,7 @@ def register_bot_commands():
         "add_function": "Adds a new cog via DM (admin).",
         "enable_function": "Enables a cog for the server (admin).",
         "disable_function": "Disables a cog for the server (admin).",
-        "logs": "Displays the last 20 lines of odin.service logs (admin)."
+        "logs": "Displays the odin.service logs up to the maximum allowable length (admin)."
     }
     try:
         try:
@@ -331,13 +331,13 @@ async def update(ctx):
         logger.error(f"Error during git overwrite or restart: {e}")
         await ctx.send(f"Error during git overwrite or restart: {str(e)}")
 
-# Command to display the last 20 lines of odin.service logs
+# Command to display odin.service logs up to the maximum allowable length
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def logs(ctx):
-    """Displays the last 20 lines of odin.service logs (admin)."""
+    """Displays the odin.service logs up to the maximum allowable length (admin)."""
     try:
-        # Run journalctl to get the last 20 lines of odin.service logs
+        # Fetch logs
         result = subprocess.run(
             ['journalctl', '-u', 'odin.service', '-n', '20', '--no-pager'],
             capture_output=True,
@@ -348,13 +348,10 @@ async def logs(ctx):
             if not logs:
                 await ctx.send("No logs found for odin.service.")
                 return
-            # Send logs in a code block, splitting if necessary due to Discord message limits
-            if len(logs) > 2000:
-                parts = [logs[i:i+1990] for i in range(0, len(logs), 1990)]
-                for i, part in enumerate(parts, 1):
-                    await ctx.send(f"**Odin Service Logs (Part {i}/{len(parts)})**:\n```\n{part}\n```")
-            else:
-                await ctx.send(f"**Odin Service Logs**:\n```\n{logs}\n```")
+            # Trim to 1900 characters to account for formatting
+            if len(logs) > 1900:
+                logs = logs[:1900] + "... (trimmed)"
+            await ctx.send(f"**Odin Service Logs**:\n```\n{logs}\n```")
         else:
             logger.error(f"Failed to fetch logs: {result.stderr}")
             await ctx.send(f"Failed to fetch logs:\n```\n{result.stderr}\n```")
