@@ -31,7 +31,7 @@ intents.message_content = True
 intents.dm_messages = True
 bot = commands.Bot(command_prefix=config['prefix'], intents=intents, help_command=None)
 
-# Register bot-level commands in commands.json
+# Register bot-level commands in functions.json
 def register_bot_commands():
     commands_to_register = {
         "update": "Restarts the bot (admin).",
@@ -40,18 +40,18 @@ def register_bot_commands():
         "disable_function": "Disables a cog for the server (admin).",
         "logs": "Displays the odin.service logs up to the maximum allowable length (admin).",
         "install_deps": "Installs dependencies from requirements.txt within the venv and restarts (admin).",
-        "rename": "Renames a command in commands.json (admin).",
+        "rename": "Renames a command in functions.json (admin).",
         "change_prefix": "Changes the bot's command prefix (admin)."
     }
     try:
         try:
-            with open('commands.json', 'r') as f:
+            with open('functions.json', 'r') as f:
                 data = json.load(f)
         except FileNotFoundError:
-            data = {"commands": {}}
+            data = {"cogs": {}, "bot_commands": {}}
 
-        data["commands"].update(commands_to_register)
-        with open('commands.json', 'w') as f:
+        data["bot_commands"] = commands_to_register
+        with open('functions.json', 'w') as f:
             json.dump(data, f, indent=4)
     except Exception as e:
         logger.error(f"Failed to register bot commands: {e}")
@@ -63,6 +63,19 @@ if not os.path.exists('./server_configs'):
 
 # Load server-specific cogs
 async def load_server_cogs(guild_id):
+    # Load functions.json to get the list of available cogs
+    try:
+        with open('functions.json', 'r') as f:
+            functions_data = json.load(f)
+        available_cogs = functions_data.get("cogs", {}).keys()
+    except FileNotFoundError:
+        logger.error("functions.json not found. No cogs will be loaded.")
+        return
+    except json.JSONDecodeError:
+        logger.error("functions.json is invalid JSON. No cogs will be loaded.")
+        return
+
+    # Always ensure the base 'general' cog is loaded
     if 'cogs.general' not in bot.extensions:
         try:
             await bot.load_extension('cogs.general')
@@ -70,6 +83,7 @@ async def load_server_cogs(guild_id):
         except Exception as e:
             logger.error(f"Failed to load base cog cogs.general: {e}")
 
+    # Load server-specific cogs
     config_path = f'./server_configs/{guild_id}.json'
     try:
         with open(config_path, 'r') as f:
@@ -83,7 +97,11 @@ async def load_server_cogs(guild_id):
         logger.error(f"Invalid JSON in {config_path}. Skipping server-specific cogs.")
         return
 
+    # Load cogs specified in the server's config
     for cog_name in server_cogs:
+        if cog_name not in available_cogs:
+            logger.warning(f"Cog {cog_name} listed in server config but not in functions.json. Skipping.")
+            continue
         cog = f'cogs.{cog_name}'
         if cog != 'cogs.general' and cog not in bot.extensions:
             try:
@@ -133,6 +151,22 @@ async def enable_function(ctx, cog_name: str):
         return
     if not os.path.exists(f'./cogs/{cog_name}.py'):
         await ctx.send(f"No cog named '{cog_name}' exists in the cogs directory.")
+        return
+
+    # Check if the cog exists in functions.json
+    try:
+        with open('functions.json', 'r') as f:
+            functions_data = json.load(f)
+        available_cogs = functions_data.get("cogs", {}).keys()
+    except FileNotFoundError:
+        await ctx.send("Error: functions.json not found.")
+        return
+    except json.JSONDecodeError:
+        await ctx.send("Error: functions.json is invalid.")
+        return
+
+    if cog_name not in available_cogs:
+        await ctx.send(f"Cog '{cog_name}' is not listed in functions.json.")
         return
 
     config_path = f'./server_configs/{ctx.guild.id}.json'
@@ -279,12 +313,10 @@ async def update(ctx):
     await ctx.send("Restarting Odin...")
     logger.info("Initiating bot restart.")
 
-    # Cleanly close the bot
     await bot.close()
     if bot.http:
         await bot.http.close()
 
-    # Restart the bot process
     import sys
     import os
     os.execv(sys.executable, [sys.executable] + sys.argv)
@@ -351,36 +383,56 @@ async def install_deps(ctx):
         logger.error(f"Error during dependency installation or restart: {e}")
         await ctx.send(f"Error during dependency installation or restart: {str(e)}")
 
-# Command to rename a command in commands.json
+# Command to rename a command in functions.json
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def rename(ctx, old_name: str, new_name: str):
-    """Renames a command in commands.json (admin)."""
+    """Renames a command in functions.json (admin)."""
     import re
     if not re.match(r'^[a-zA-Z0-9_-]+$', new_name):
         await ctx.send("New command name can only contain letters, numbers, underscores, or hyphens.")
         return
 
     try:
-        with open('commands.json', 'r') as f:
+        with open('functions.json', 'r') as f:
             data = json.load(f)
-        command_descriptions = data.get("commands", {})
     except FileNotFoundError:
-        await ctx.send("Error: commands.json not found.")
+        await ctx.send("Error: functions.json not found.")
         return
     except json.JSONDecodeError:
-        await ctx.send("Error: commands.json is invalid.")
+        await ctx.send("Error: functions.json is invalid.")
         return
 
-    if old_name not in command_descriptions:
-        await ctx.send(f"Command '{old_name}' not found in commands.json.")
-        return
-
-    if new_name in command_descriptions:
-        await ctx.send(f"Command '{new_name}' already exists in commands.json.")
-        return
-
+    # Find the command in bot_commands or cogs
+    command_found = False
     cog_name = None
+
+    # Check bot_commands
+    bot_commands = data.get("bot_commands", {})
+    if old_name in bot_commands:
+        description = bot_commands.pop(old_name)
+        bot_commands[new_name] = description
+        data["bot_commands"] = bot_commands
+        command_found = True
+
+    # Check cogs
+    if not command_found:
+        cogs = data.get("cogs", {})
+        for cog, cog_data in cogs.items():
+            commands = cog_data.get("commands", {})
+            if old_name in commands:
+                description = commands.pop(old_name)
+                commands[new_name] = description
+                cog_data["commands"] = commands
+                cogs[cog] = cog_data
+                cog_name = cog
+                command_found = True
+                break
+
+    if not command_found:
+        await ctx.send(f"Command '{old_name}' not found in functions.json.")
+        return
+
     if old_name in ["ping", "info", "help", "cmd_bank"]:
         cog_name = "general"
     elif old_name in ["update", "add_function", "enable_function", "disable_function", "logs", "install_deps", "rename", "change_prefix"]:
@@ -393,11 +445,15 @@ async def rename(ctx, old_name: str, new_name: str):
             await ctx.send(f"Command name must match the cog file name '{cog_name}'.py for non-general cogs.")
             return
 
-    description = command_descriptions.pop(old_name)
-    command_descriptions[new_name] = description
-    data["commands"] = command_descriptions
+    # Check if the new command name already exists
+    for section in [data.get("bot_commands", {})] + [cog_data.get("commands", {}) for cog_data in data.get("cogs", {}).values()]:
+        if new_name in section:
+            await ctx.send(f"Command '{new_name}' already exists in functions.json.")
+            return
 
-    with open('commands.json', 'w') as f:
+    data["cogs"] = cogs
+
+    with open('functions.json', 'w') as f:
         json.dump(data, f, indent=4)
 
     if cog_name and cog_name != "general":
