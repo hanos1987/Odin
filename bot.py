@@ -34,7 +34,7 @@ bot = commands.Bot(command_prefix=config['prefix'], intents=intents, help_comman
 # Register bot-level commands in commands.json
 def register_bot_commands():
     commands_to_register = {
-        "update": "Pulls Git updates and restarts (admin).",
+        "update": "Restarts the bot (admin).",
         "add_function": "Adds a new cog via DM (admin).",
         "enable_function": "Enables a cog for the server (admin).",
         "disable_function": "Disables a cog for the server (admin).",
@@ -271,56 +271,23 @@ async def add_function(ctx, cog_name: str):
     except asyncio.TimeoutError:
         await ctx.author.send("Timed out waiting for your reply. Please use `!add_function` again.")
 
-# Command to pull updates from Git and restart
+# Command to restart the bot
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def update(ctx):
-    """Pulls Git updates and restarts (admin)."""
-    await ctx.send("Fetching and overwriting with latest changes from Git repository...")
-    try:
-        # Step 1: Fetch the latest changes
-        fetch_result = subprocess.run(
-            ['git', 'fetch', 'origin', 'main'],
-            cwd='/root/Discord-Bots/Odin',
-            capture_output=True,
-            text=True
-        )
-        if fetch_result.returncode != 0:
-            logger.error(f"Git fetch failed: {fetch_result.stderr}")
-            await ctx.send(f"Git fetch failed:\n```\n{fetch_result.stderr}\n```")
-            return
+    """Restarts the bot (admin)."""
+    await ctx.send("Restarting Odin...")
+    logger.info("Initiating bot restart.")
 
-        # Step 2: Reset to the fetched main branch, overwriting local changes
-        reset_result = subprocess.run(
-            ['git', 'reset', '--hard', 'origin/main'],
-            cwd='/root/Discord-Bots/Odin',
-            capture_output=True,
-            text=True
-        )
-        if reset_result.returncode == 0:
-            logger.info("Git overwrite successful.")
-            await ctx.send(f"Git overwrite successful:\n```\n{reset_result.stdout}\n```")
-        else:
-            logger.error(f"Git reset failed: {reset_result.stderr}")
-            await ctx.send(f"Git reset failed:\n```\n{reset_result.stderr}\n```")
-            return
+    # Cleanly close the bot
+    await bot.close()
+    if bot.http:
+        await bot.http.close()
 
-        # Step 3: Restart the bot
-        await ctx.send("Restarting Odin to apply updates...")
-        logger.info("Initiating bot restart after successful update.")
-
-        # Cleanly close the bot
-        await bot.close()
-        if bot.http:
-            await bot.http.close()
-
-        # Restart the bot process
-        import sys
-        import os
-        os.execv(sys.executable, [sys.executable] + sys.argv)
-    except Exception as e:
-        logger.error(f"Error during git overwrite or restart: {e}")
-        await ctx.send(f"Error during git overwrite or restart: {str(e)}")
+    # Restart the bot process
+    import sys
+    import os
+    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 # Command to display odin.service logs up to the maximum allowable length
 @bot.command()
