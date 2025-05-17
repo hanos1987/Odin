@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import asyncio
+import subprocess
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -171,6 +172,34 @@ async def add_function(ctx, cog_name: str):
             await ctx.author.send("Please wrap your code in triple backticks (```). Try again.")
     except asyncio.TimeoutError:
         await ctx.author.send("Timed out waiting for your reply. Please use `!add_function` again.")
+
+# Command to pull updates from Git
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def update(ctx):
+    """Pulls the latest changes from the Git repository (origin/main)."""
+    await ctx.send("Pulling updates from Git repository...")
+    try:
+        # Run git pull origin main in the bot's directory
+        result = subprocess.run(
+            ['git', 'pull', 'origin', 'main'],
+            cwd='/root/Discord-Bots/Odin',  # Ensure this is the correct path
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            logger.info("Git pull successful.")
+            await ctx.send(f"Git pull successful:\n```\n{result.stdout}\n```")
+            # Reload cogs to apply any changes
+            await ctx.send("Reloading cogs...")
+            await load_cogs_from_json()
+            await ctx.send("Cog reload complete!")
+        else:
+            logger.error(f"Git pull failed: {result.stderr}")
+            await ctx.send(f"Git pull failed:\n```\n{result.stderr}\n```")
+    except Exception as e:
+        logger.error(f"Error during git pull: {e}")
+        await ctx.send(f"Error during git pull: {str(e)}")
 
 # Run the bot
 async def main():
