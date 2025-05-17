@@ -260,7 +260,7 @@ async def add_function(ctx, cog_name: str):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def update(ctx):
-    """Pulls the latest changes from the Git repository (origin/main), overwriting local changes."""
+    """Pulls the latest changes from the Git repository (origin/main), overwriting local changes, then restarts."""
     await ctx.send("Fetching and overwriting with latest changes from Git repository...")
     try:
         # Step 1: Fetch the latest changes
@@ -289,10 +289,23 @@ async def update(ctx):
             logger.error(f"Git reset failed: {reset_result.stderr}")
             await ctx.send(f"Git reset failed:\n```\n{reset_result.stderr}\n```")
             return
+
+        # Step 3: Restart the bot
+        await ctx.send("Restarting Odin to apply updates...")
+        logger.info("Initiating bot restart after successful update.")
+
+        # Cleanly close the bot
+        await bot.close()
+        if bot.http:
+            await bot.http.close()
+
+        # Restart the bot process
+        import sys
+        import os
+        os.execv(sys.executable, [sys.executable] + sys.argv)
     except Exception as e:
-        logger.error(f"Error during git overwrite: {e}")
-        await ctx.send(f"Error during git overwrite: {str(e)}")
-        return
+        logger.error(f"Error during git overwrite or restart: {e}")
+        await ctx.send(f"Error during git overwrite or restart: {str(e)}")
 
 # Run the bot
 async def main():
