@@ -103,11 +103,12 @@ async def on_command_error(ctx, error):
 @commands.has_permissions(administrator=True)
 async def enable_function(ctx, cog_name: str):
     """Enables a cog for this server."""
+    import re
     if not ctx.guild:
         await ctx.send("This command can only be used in a server.")
         return
-    if not cog_name.isalnum():
-        await ctx.send("Cog name must be alphanumeric (letters and numbers only).")
+    if not re.match(r'^[a-zA-Z0-9_-]+$', cog_name) or cog_name.startswith('.'):
+        await ctx.send("Cog name can only contain letters, numbers, underscores, or hyphens, and cannot start with a period.")
         return
     if not os.path.exists(f'./cogs/{cog_name}.py'):
         await ctx.send(f"No cog named '{cog_name}' exists in the cogs directory.")
@@ -148,8 +149,12 @@ async def enable_function(ctx, cog_name: str):
 @commands.has_permissions(administrator=True)
 async def disable_function(ctx, cog_name: str):
     """Disables a cog for this server."""
+    import re
     if not ctx.guild:
         await ctx.send("This command can only be used in a server.")
+        return
+    if not re.match(r'^[a-zA-Z0-9_-]+$', cog_name) or cog_name.startswith('.'):
+        await ctx.send("Cog name can only contain letters, numbers, underscores, or hyphens, and cannot start with a period.")
         return
     if cog_name == "general":
         await ctx.send("The 'general' cog cannot be disabled.")
@@ -201,8 +206,10 @@ async def disable_function(ctx, cog_name: str):
 @commands.has_permissions(administrator=True)
 async def add_function(ctx, cog_name: str):
     """Initiates adding a new cog by DMing the invoker for the code, overwriting if it exists."""
-    if not cog_name.isalnum():
-        await ctx.send("Cog name must be alphanumeric (letters and numbers only).")
+    import re
+    # Validate cog name: letters, numbers, underscores, hyphens; no spaces or special chars
+    if not re.match(r'^[a-zA-Z0-9_-]+$', cog_name) or cog_name.startswith('.'):
+        await ctx.send("Cog name can only contain letters, numbers, underscores, or hyphens, and cannot start with a period.")
         return
 
     # Check if the cog is currently loaded
