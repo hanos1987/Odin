@@ -24,19 +24,21 @@ class FunctionGenerator(commands.Cog):
         self._register_commands()
 
     def _register_commands(self):
-        """Register this cog's commands in commands.json."""
+        """Register this cog's commands in functions.json."""
         commands_to_register = {
             "function_generator": "Generates a program from a text prompt using AI (admin)."
         }
         try:
             try:
-                with open('commands.json', 'r') as f:
+                with open('functions.json', 'r') as f:
                     data = json.load(f)
             except FileNotFoundError:
-                data = {"commands": {}}
+                data = {"cogs": {}, "bot_commands": {}}
 
-            data["commands"].update(commands_to_register)
-            with open('commands.json', 'w') as f:
+            if "cogs" not in data:
+                data["cogs"] = {}
+            data["cogs"]["function_generator"] = {"commands": commands_to_register}
+            with open('functions.json', 'w') as f:
                 json.dump(data, f, indent=4)
         except Exception as e:
             logger.error(f"Failed to register commands for FunctionGenerator cog: {e}")
