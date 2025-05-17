@@ -41,7 +41,8 @@ def register_bot_commands():
         "logs": "Displays the odin.service logs up to the maximum allowable length (admin).",
         "install_deps": "Installs dependencies from requirements.txt within the venv and restarts (admin).",
         "rename": "Renames a command in functions.json (admin).",
-        "change_prefix": "Changes the bot's command prefix (admin)."
+        "change_prefix": "Changes the bot's command prefix (admin).",
+        "generate_cog": "Placeholder for generating predefined cog files on the server (admin)."
     }
     try:
         try:
@@ -63,7 +64,6 @@ if not os.path.exists('./server_configs'):
 
 # Load server-specific cogs
 async def load_server_cogs(guild_id):
-    # Load functions.json to get the list of available cogs
     try:
         with open('functions.json', 'r') as f:
             functions_data = json.load(f)
@@ -75,7 +75,6 @@ async def load_server_cogs(guild_id):
         logger.error("functions.json is invalid JSON. No cogs will be loaded.")
         return
 
-    # Always ensure the base 'general' cog is loaded
     if 'cogs.general' not in bot.extensions:
         try:
             await bot.load_extension('cogs.general')
@@ -83,7 +82,6 @@ async def load_server_cogs(guild_id):
         except Exception as e:
             logger.error(f"Failed to load base cog cogs.general: {e}")
 
-    # Load server-specific cogs
     config_path = f'./server_configs/{guild_id}.json'
     try:
         with open(config_path, 'r') as f:
@@ -97,7 +95,6 @@ async def load_server_cogs(guild_id):
         logger.error(f"Invalid JSON in {config_path}. Skipping server-specific cogs.")
         return
 
-    # Load cogs specified in the server's config
     for cog_name in server_cogs:
         if cog_name not in available_cogs:
             logger.warning(f"Cog {cog_name} listed in server config but not in functions.json. Skipping.")
@@ -110,7 +107,6 @@ async def load_server_cogs(guild_id):
             except Exception as e:
                 logger.error(f"Failed to load server-specific cog {cog} for guild {guild_id}: {e}")
 
-# On ready event: Load general cog only initially
 @bot.event
 async def on_ready():
     logger.info(f'Logged in as {bot.user.name} ({bot.user.id})')
@@ -122,13 +118,11 @@ async def on_ready():
         except Exception as e:
             logger.error(f"Failed to load base cog cogs.general: {e}")
 
-# Before invoking a command, load the server's cogs
 @bot.before_invoke
 async def before_invoke(ctx):
     if ctx.guild:
         await load_server_cogs(ctx.guild.id)
 
-# Error handling for commands
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
@@ -137,11 +131,9 @@ async def on_command_error(ctx, error):
         logger.error(f'Error in command {ctx.command}: {error}')
         await ctx.send("An error occurred while processing the command.")
 
-# Command to enable a cog for the server
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def enable_function(ctx, cog_name: str):
-    """Enables a cog for this server."""
     import re
     if not ctx.guild:
         await ctx.send("This command can only be used in a server.")
@@ -153,7 +145,6 @@ async def enable_function(ctx, cog_name: str):
         await ctx.send(f"No cog named '{cog_name}' exists in the cogs directory.")
         return
 
-    # Check if the cog exists in functions.json
     try:
         with open('functions.json', 'r') as f:
             functions_data = json.load(f)
@@ -198,11 +189,9 @@ async def enable_function(ctx, cog_name: str):
         logger.error(f"Failed to load cog {cog_name} for guild {ctx.guild.id}: {e}")
         await ctx.send(f"Failed to load cog '{cog_name}'. Check the code for errors.")
 
-# Command to disable a cog for the server
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def disable_function(ctx, cog_name: str):
-    """Disables a cog for this server."""
     import re
     if not ctx.guild:
         await ctx.send("This command can only be used in a server.")
@@ -254,11 +243,9 @@ async def disable_function(ctx, cog_name: str):
 
     await ctx.send(f"Disabled cog '{cog_name}' for this server.")
 
-# Command to add a new cog via DM
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def add_function(ctx, cog_name: str):
-    """Initiates adding a new cog by DMing the invoker for the code, overwriting if it exists."""
     import re
     if not re.match(r'^[a-zAZ0-9_-]+$', cog_name) or cog_name.startswith('.'):
         await ctx.send("Cog name can only contain letters, numbers, underscores, or hyphens, and cannot start with a period.")
@@ -305,11 +292,9 @@ async def add_function(ctx, cog_name: str):
     except asyncio.TimeoutError:
         await ctx.author.send("Timed out waiting for your reply. Please use `!add_function` again.")
 
-# Command to restart the bot
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def update(ctx):
-    """Restarts the bot (admin)."""
     await ctx.send("Restarting Odin...")
     logger.info("Initiating bot restart.")
 
@@ -321,11 +306,9 @@ async def update(ctx):
     import os
     os.execv(sys.executable, [sys.executable] + sys.argv)
 
-# Command to display odin.service logs up to the maximum allowable length
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def logs(ctx):
-    """Displays the odin.service logs up to the maximum allowable length (admin)."""
     try:
         result = subprocess.run(
             ['journalctl', '-u', 'odin.service', '-n', '20', '--no-pager'],
@@ -347,11 +330,9 @@ async def logs(ctx):
         logger.error(f"Error fetching logs: {e}")
         await ctx.send(f"Error fetching logs: {str(e)}")
 
-# Command to install dependencies from requirements.txt within the venv
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def install_deps(ctx):
-    """Installs dependencies from requirements.txt within the venv and restarts (admin)."""
     await ctx.send("Installing dependencies from requirements.txt within the virtual environment...")
     try:
         venv_pip = '/root/Discord-Bots/Odin/venv/bin/pip'
@@ -383,11 +364,9 @@ async def install_deps(ctx):
         logger.error(f"Error during dependency installation or restart: {e}")
         await ctx.send(f"Error during dependency installation or restart: {str(e)}")
 
-# Command to rename a command in functions.json
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def rename(ctx, old_name: str, new_name: str):
-    """Renames a command in functions.json (admin)."""
     import re
     if not re.match(r'^[a-zA-Z0-9_-]+$', new_name):
         await ctx.send("New command name can only contain letters, numbers, underscores, or hyphens.")
@@ -403,11 +382,9 @@ async def rename(ctx, old_name: str, new_name: str):
         await ctx.send("Error: functions.json is invalid.")
         return
 
-    # Find the command in bot_commands or cogs
     command_found = False
     cog_name = None
 
-    # Check bot_commands
     bot_commands = data.get("bot_commands", {})
     if old_name in bot_commands:
         description = bot_commands.pop(old_name)
@@ -415,7 +392,6 @@ async def rename(ctx, old_name: str, new_name: str):
         data["bot_commands"] = bot_commands
         command_found = True
 
-    # Check cogs
     if not command_found:
         cogs = data.get("cogs", {})
         for cog, cog_data in cogs.items():
@@ -435,7 +411,7 @@ async def rename(ctx, old_name: str, new_name: str):
 
     if old_name in ["ping", "info", "help", "cmd_bank"]:
         cog_name = "general"
-    elif old_name in ["update", "add_function", "enable_function", "disable_function", "logs", "install_deps", "rename", "change_prefix"]:
+    elif old_name in ["update", "add_function", "enable_function", "disable_function", "logs", "install_deps", "rename", "change_prefix", "generate_cog"]:
         cog_name = None
     elif old_name == "function_generator":
         cog_name = "function_generator"
@@ -445,7 +421,6 @@ async def rename(ctx, old_name: str, new_name: str):
             await ctx.send(f"Command name must match the cog file name '{cog_name}'.py for non-general cogs.")
             return
 
-    # Check if the new command name already exists
     for section in [data.get("bot_commands", {})] + [cog_data.get("commands", {}) for cog_data in data.get("cogs", {}).values()]:
         if new_name in section:
             await ctx.send(f"Command '{new_name}' already exists in functions.json.")
@@ -469,11 +444,9 @@ async def rename(ctx, old_name: str, new_name: str):
     else:
         await ctx.send(f"Renamed command '{old_name}' to '{new_name}'. No cog reload needed.")
 
-# Command to change the command prefix
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def change_prefix(ctx):
-    """Changes the bot's command prefix (admin)."""
     prefix_options = ['!', '@', '#', '$', '%']
     
     options_message = "Please select a new command prefix by replying with the number:\n"
@@ -510,7 +483,17 @@ async def change_prefix(ctx):
     except asyncio.TimeoutError:
         await ctx.send("Timed out waiting for your selection. Please run the command again.")
 
-# Run the bot
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def generate_cog(ctx, cog_name: str):
+    """Placeholder for generating predefined cog files on the server (admin)."""
+    import re
+    if not re.match(r'^[a-zA-Z0-9_-]+$', cog_name) or cog_name.startswith('.'):
+        await ctx.send("Cog name can only contain letters, numbers, underscores, or hyphens, and cannot start with a period.")
+        return
+
+    await ctx.send("This command is a placeholder for generating predefined cogs. No cogs are currently available for automatic generation. Use `!add_function` to create custom cogs.")
+
 async def main():
     try:
         await bot.start(config['token'])
