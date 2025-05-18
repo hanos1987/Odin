@@ -5,6 +5,7 @@ import logging
 import os
 import asyncio
 import subprocess
+import re
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -45,7 +46,7 @@ def register_bot_commands():
         "install_deps": "Installs dependencies from requirements.txt within the venv and restarts (admin).",
         "rename": "Renames a command in functions.json (admin).",
         "change_prefix": "Changes the bot's command prefix (admin).",
-        "generate_cog": "Placeholder for generating predefined cog files on the server (admin).",
+        "generate_cog": "Generates a new cog file based on user input via DMs (admin).",
         "execute": "Executes a shell command on the server (admin, restricted)."
     }
     try:
@@ -251,7 +252,7 @@ async def disable_function(ctx, cog_name: str):
 @commands.has_permissions(administrator=True)
 async def add_function(ctx, cog_name: str):
     import re
-    if not re.match(r'^[a-zAZ0-9_-]+$', cog_name) or cog_name.startswith('.'):
+    if not re.match(r'^[a-zA-Z0-9_-]+$', cog_name) or cog_name.startswith('.'):
         await ctx.send("Cog name can only contain letters, numbers, underscores, or hyphens, and cannot start with a period.")
         return
 
@@ -267,10 +268,12 @@ async def add_function(ctx, cog_name: str):
             await ctx.send(f"Failed to unload existing cog '{cog_name}' for overwriting: {str(e)}")
             return
 
+    logger.info(f"Sending DM to user {ctx.author.id} for cog code '{cog_name}'")
     try:
         await ctx.author.send(f"Please reply with the `.py` code for the cog named '{cog_name}'. Wrap the code in triple backticks (```) like this:\n```\n# Your code here\n```")
         await ctx.send("I’ve sent you a DM. Please reply there with the cog code.")
     except discord.Forbidden:
+        logger.error(f"Failed to send DM to user {ctx.author.id}: DMs are disabled.")
         await ctx.send("I couldn’t DM you. Please enable DMs from server members.")
         return
 
@@ -278,22 +281,32 @@ async def add_function(ctx, cog_name: str):
         return msg.author == ctx.author and isinstance(msg.channel, discord.DMChannel)
 
     try:
+        logger.info(f"Waiting for user {ctx.author.id} to reply with code for '{cog_name}'")
         msg = await bot.wait_for('message', check=check, timeout=300)
         content = msg.content.strip()
-        
+        logger.info(f"Received reply from user {ctx.author.id} for '{cog_name}': {content[:50]}...")
+
         if content.startswith('```') and content.endswith('```'):
             code = content[3:-3].strip()
             if not code:
+                logger.warning(f"User {ctx.author.id} provided empty code for '{cog_name}'.")
                 await ctx.author.send("The code you provided is empty. Please try again.")
                 return
 
-            with open(f'./cogs/{cog_name}.py', 'w') as f:
-                f.write(code)
-            logger.info(f'Saved (or overwrote) cog file: cogs/{cog_name}.py')
-            await ctx.author.send(f"Cog '{cog_name}' has been added/overwritten. Use `!enable_function {cog_name}` in a server to enable it.")
+            logger.info(f"Attempting to write file for cog '{cog_name}' at ./cogs/{cog_name}.py")
+            try:
+                with open(f'./cogs/{cog_name}.py', 'w') as f:
+                    f.write(code)
+                logger.info(f'Saved (or overwrote) cog file: cogs/{cog_name}.py')
+                await ctx.author.send(f"Cog '{cog_name}' has been added/overwritten. Use `!enable_function {cog_name}` in a server to enable it.")
+            except Exception as e:
+                logger.error(f"Failed to write file cogs/{cog_name}.py: {str(e)}")
+                await ctx.author.send(f"Failed to save the cog file due to an error: {str(e)}")
         else:
+            logger.warning(f"User {ctx.author.id} did not wrap code for '{cog_name}' in triple backticks.")
             await ctx.author.send("Please wrap your code in triple backticks (```). Try again.")
     except asyncio.TimeoutError:
+        logger.warning(f"Timed out waiting for user {ctx.author.id} to reply for '{cog_name}'.")
         await ctx.author.send("Timed out waiting for your reply. Please use `!add_function` again.")
 
 @bot.command()
@@ -489,20 +502,143 @@ async def change_prefix(ctx):
 
 @bot.command()
 @commands.has_permissions(administrator=True)
-async def generate_cog(ctx, cog_name: str):
-    """Placeholder for generating predefined cog files on the server (admin)."""
-    import re
-    if not re.match(r'^[a-zA-Z0-9_-]+$', cog_name) or cog_name.startswith('.'):
-        await ctx.send("Cog name can only contain letters, numbers, underscores, or hyphens, and cannot start with a period.")
+async def generate_cog(ctx):
+    """Generates a new cog file based on user input via DMs (admin)."""
+    try:
+        await ctx.author.send("Let's create a new cog. Please provide the cog name (letters, numbers, underscores, or hyphens, no spaces or special characters).")
+        await ctx.send("I’ve sent you a DM to start creating the cog.")
+    except discord.Forbidden:
+        logger.error(f"Failed to send DM to user {ctx.author.id}: DMs are disabled.")
+        await ctx.send("I couldn’t DM you. Please enable DMs from server members.")
         return
 
-    await ctx.send("This command is a placeholder for generating predefined cogs. No cogs are currently available for automatic generation. Use `!add_function` to create custom cogs.")
+    def check(msg):
+        return msg.author == ctx.author and isinstance(msg.channel, discord.DMChannel)
+
+    # Step 1: Get cog name
+    try:
+        logger.info(f"Waiting for user {ctx.author.id} to provide cog name")
+        msg = await bot.wait_for('message', check=check, timeout=300)
+        cog_name = msg.content.strip()
+        if not re.match(r'^[a-zA-Z0-9_-]+$', cog_name) or cog_name.startswith('.'):
+            await ctx.author.send("Cog name can only contain letters, numbers, underscores, or hyphens, and cannot start with a period. Please try again with `!generate_cog`.")
+            return
+        if os.path.exists(f'./cogs/{cog_name}.py'):
+            await ctx.author.send(f"A cog named '{cog_name}' already exists. Please choose a different name or use `!add_function` to overwrite.")
+            return
+    except asyncio.TimeoutError:
+        logger.warning(f"Timed out waiting for user {ctx.author.id} to provide cog name")
+        await ctx.author.send("Timed out waiting for the cog name. Please use `!generate_cog` again.")
+        return
+
+    # Step 2: Get description
+    try:
+        await ctx.author.send("Please provide a brief description of what this cog does (e.g., 'Sends daily reminders').")
+        logger.info(f"Waiting for user {ctx.author.id} to provide description for '{cog_name}'")
+        msg = await bot.wait_for('message', check=check, timeout=300)
+        description = msg.content.strip()
+        if not description:
+            await ctx.author.send("Description cannot be empty. Please try again with `!generate_cog`.")
+            return
+    except asyncio.TimeoutError:
+        logger.warning(f"Timed out waiting for user {ctx.author.id} to provide description")
+        await ctx.author.send("Timed out waiting for the description. Please use `!generate_cog` again.")
+        return
+
+    # Step 3: Get functionality
+    try:
+        await ctx.author.send("Please describe the functionality you want (e.g., 'A command to send a reminder message every day at 8 AM'). This will be included as a comment in the code for future implementation.")
+        logger.info(f"Waiting for user {ctx.author.id} to provide functionality for '{cog_name}'")
+        msg = await bot.wait_for('message', check=check, timeout=300)
+        functionality = msg.content.strip()
+        if not functionality:
+            await ctx.author.send("Functionality cannot be empty. Please try again with `!generate_cog`.")
+            return
+    except asyncio.TimeoutError:
+        logger.warning(f"Timed out waiting for user {ctx.author.id} to provide functionality")
+        await ctx.author.send("Timed out waiting for the functionality. Please use `!generate_cog` again.")
+        return
+
+    # Step 4: Confirm with user
+    confirmation_message = (
+        f"Please confirm the following details for the new cog:\n"
+        f"**Cog Name**: {cog_name}\n"
+        f"**Description**: {description}\n"
+        f"**Functionality**: {functionality}\n"
+        f"Reply with 'confirm' to proceed or 'cancel' to abort."
+    )
+    try:
+        await ctx.author.send(confirmation_message)
+        logger.info(f"Waiting for user {ctx.author.id} to confirm details for '{cog_name}'")
+        msg = await bot.wait_for('message', check=check, timeout=300)
+        response = msg.content.strip().lower()
+        if response != 'confirm':
+            await ctx.author.send("Cog creation cancelled. Use `!generate_cog` to start over.")
+            return
+    except asyncio.TimeoutError:
+        logger.warning(f"Timed out waiting for user {ctx.author.id} to confirm")
+        await ctx.author.send("Timed out waiting for confirmation. Please use `!generate_cog` again.")
+        return
+
+    # Step 5: Generate cog code
+    cog_code = f"""from discord.ext import commands
+
+class {cog_name.capitalize()}(commands.Cog):
+    \"\"\"{description}\"\"\"
+    def __init__(self, bot):
+        self.bot = bot
+
+    @commands.command(name='{cog_name}')
+    async def {cog_name}(self, ctx):
+        \"\"\"Placeholder command for {description.lower()}\"\"\"
+        # TODO: Implement functionality: {functionality}
+        await ctx.send('This is a placeholder command for {cog_name}. Functionality to be implemented.')
+
+async def setup(bot):
+    await bot.add_cog({cog_name.capitalize()}(bot))
+"""
+
+    # Step 6: Save cog file
+    try:
+        with open(f'./cogs/{cog_name}.py', 'w') as f:
+            f.write(cog_code)
+        logger.info(f"Saved cog file: cogs/{cog_name}.py on the DigitalOcean Droplet")
+    except Exception as e:
+        logger.error(f"Failed to write file cogs/{cog_name}.py: {str(e)}")
+        await ctx.author.send(f"Failed to save the cog file due to an error: {str(e)}")
+        return
+
+    # Step 7: Update functions.json
+    try:
+        try:
+            with open('functions.json', 'r') as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            data = {"cogs": {}, "bot_commands": {}}
+
+        data["cogs"][cog_name] = {
+            "commands": {
+                cog_name: description
+            }
+        }
+        with open('functions.json', 'w') as f:
+            json.dump(data, f, indent=4)
+        logger.info(f"Registered cog '{cog_name}' in functions.json")
+    except Exception as e:
+        logger.error(f"Failed to update functions.json for cog '{cog_name}': {e}")
+        await ctx.author.send(f"Cog '{cog_name}' was saved, but failed to register in functions.json: {str(e)}")
+        return
+
+    # Step 8: Confirm success
+    await ctx.author.send(
+        f"Cog '{cog_name}' has been successfully created and saved to the DigitalOcean Droplet at './cogs/{cog_name}.py'. "
+        f"It has been registered in functions.json. Use `!enable_function {cog_name}` in a server to enable it."
+    )
 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def execute(ctx, *, command: str):
     """Executes a shell command on the server (admin, restricted)."""
-    # Restrict to the allowed user ID
     if ctx.author.id != ALLOWED_USER_ID:
         await ctx.send("Sorry, you are not authorized to use this command.")
         return
@@ -511,11 +647,9 @@ async def execute(ctx, *, command: str):
         await ctx.send("Please provide a command to execute.")
         return
 
-    # Log the command execution attempt
     logger.info(f"Executing command '{command}' on behalf of user {ctx.author.id}")
 
     try:
-        # Execute the command with a timeout of 10 seconds
         result = subprocess.run(
             command,
             shell=True,
@@ -525,18 +659,15 @@ async def execute(ctx, *, command: str):
             timeout=10
         )
 
-        # Capture output
         output = result.stdout
         error = result.stderr
 
-        # Combine output and error (if any)
         full_output = ""
         if output:
             full_output += output
         if error:
             full_output += error
 
-        # Trim output to fit Discord's 2000-character limit
         if not full_output:
             full_output = "Command executed, but no output was returned."
         if len(full_output) > 1900:
@@ -544,7 +675,6 @@ async def execute(ctx, *, command: str):
 
         await ctx.send(f"**Command Output**:\n```\n{full_output}\n```")
         logger.info(f"Command '{command}' executed successfully with output length: {len(full_output)}")
-
     except subprocess.TimeoutExpired:
         await ctx.send("Command execution timed out after 10 seconds.")
         logger.error(f"Command '{command}' timed out after 10 seconds.")
