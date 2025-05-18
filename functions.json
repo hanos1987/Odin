@@ -8,9 +8,9 @@
                 "cmd_bank": "Lists all available commands with their descriptions."
             }
         },
-        "function_generator": {
+        "generate_cog": {
             "commands": {
-                "function_generator": "Generates a program from a text prompt using AI (admin)."
+                "generate_cog": "Generates a new cog file based on user input via DMs (admin)."
             }
         }
     },
@@ -21,7 +21,10 @@
         "disable_function": "Disables a cog for the server (admin).",
         "logs": "Displays the odin.service logs up to the maximum allowable length (admin).",
         "install_deps": "Installs dependencies from requirements.txt within the venv and restarts (admin).",
-        "rename": "Renames a command in commands.json (admin).",
-        "change_prefix": "Changes the bot's command prefix (admin)."
+        "rename": "Renames a command in functions.json (admin).",
+        "change_prefix": "Changes the bot's command prefix (admin).",
+        "generate_cog": "Generates a new cog file based on user input via DMs (admin).",
+        "execute": "Executes a shell command on the server (admin, restricted).",
+        "sync_functions": "Rebuilds functions.json to match loaded cogs (admin)."
     }
 }
