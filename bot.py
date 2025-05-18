@@ -5,14 +5,10 @@ import logging
 import os
 import asyncio
 import subprocess
-import re
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-handler = logging.StreamHandler()
-handler.setLevel(logging.INFO)
-logger.addHandler(handler)
 
 # Load configuration
 try:
@@ -49,9 +45,8 @@ def register_bot_commands():
         "install_deps": "Installs dependencies from requirements.txt within the venv and restarts (admin).",
         "rename": "Renames a command in functions.json (admin).",
         "change_prefix": "Changes the bot's command prefix (admin).",
-        "generate_cog": "Generates a new cog file based on user input via DMs (admin).",
-        "execute": "Executes a shell command on the server (admin, restricted).",
-        "sync_functions": "Rebuilds functions.json to match loaded cogs (admin)."
+        "generate_cog": "Placeholder for generating predefined cog files on the server (admin).",
+        "execute": "Executes a shell command on the server (admin, restricted)."
     }
     try:
         try:
@@ -60,11 +55,9 @@ def register_bot_commands():
         except FileNotFoundError:
             data = {"cogs": {}, "bot_commands": {}}
 
-        # Preserve existing cogs, update bot_commands
         data["bot_commands"] = commands_to_register
         with open('functions.json', 'w') as f:
             json.dump(data, f, indent=4)
-        logger.info("Registered bot commands in functions.json")
     except Exception as e:
         logger.error(f"Failed to register bot commands: {e}")
 
@@ -87,10 +80,6 @@ async def load_server_cogs(guild_id):
         return
 
     if 'cogs.general' not in bot.extensions:
-        cog_path = 'cogs/general.py'
-        if not os.path.exists(cog_path):
-            logger.error(f"Base cog file {cog_path} does not exist")
-            return
         try:
             await bot.load_extension('cogs.general')
             logger.info("Loaded base cog: cogs.general")
@@ -115,10 +104,6 @@ async def load_server_cogs(guild_id):
             logger.warning(f"Cog {cog_name} listed in server config but not in functions.json. Skipping.")
             continue
         cog = f'cogs.{cog_name}'
-        cog_path = f'cogs/{cog_name}.py'
-        if not os.path.exists(cog_path):
-            logger.error(f"Cog file {cog_path} does not exist")
-            continue
         if cog != 'cogs.general' and cog not in bot.extensions:
             try:
                 await bot.load_extension(cog)
@@ -131,19 +116,11 @@ async def on_ready():
     logger.info(f'Logged in as {bot.user.name} ({bot.user.id})')
     register_bot_commands()
     if 'cogs.general' not in bot.extensions:
-        cog_path = 'cogs/general.py'
-        if not os.path.exists(cog_path):
-            logger.error(f"Base cog file {cog_path} does not exist")
-        else:
-            try:
-                await bot.load_extension('cogs.general')
-                logger.info("Loaded base cog: cogs.general")
-            except Exception as e:
-                logger.error(f"Failed to load base cog cogs.general: {e}")
-
-    logger.info("Loaded commands:")
-    for command in bot.commands:
-        logger.info(f" - {command.name} (from {command.cog_name})")
+        try:
+            await bot.load_extension('cogs.general')
+            logger.info("Loaded base cog: cogs.general")
+        except Exception as e:
+            logger.error(f"Failed to load base cog cogs.general: {e}")
 
 @bot.before_invoke
 async def before_invoke(ctx):
@@ -161,14 +138,14 @@ async def on_command_error(ctx, error):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def enable_function(ctx, cog_name: str):
+    import re
     if not ctx.guild:
         await ctx.send("This command can only be used in a server.")
         return
     if not re.match(r'^[a-zA-Z0-9_-]+$', cog_name) or cog_name.startswith('.'):
         await ctx.send("Cog name can only contain letters, numbers, underscores, or hyphens, and cannot start with a period.")
         return
-    cog_path = f'./cogs/{cog_name}.py'
-    if not os.path.exists(cog_path):
+    if not os.path.exists(f'./cogs/{cog_name}.py'):
         await ctx.send(f"No cog named '{cog_name}' exists in the cogs directory.")
         return
 
@@ -219,6 +196,7 @@ async def enable_function(ctx, cog_name: str):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def disable_function(ctx, cog_name: str):
+    import re
     if not ctx.guild:
         await ctx.send("This command can only be used in a server.")
         return
@@ -272,7 +250,8 @@ async def disable_function(ctx, cog_name: str):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def add_function(ctx, cog_name: str):
-    if not re.match(r'^[a-zA-Z0-9_-]+$', cog_name) or cog_name.startswith('.'):
+    import re
+    if not re.match(r'^[a-zAZ0-9_-]+$', cog_name) or cog_name.startswith('.'):
         await ctx.send("Cog name can only contain letters, numbers, underscores, or hyphens, and cannot start with a period.")
         return
 
@@ -338,423 +317,3 @@ async def update(ctx):
     await bot.close()
     if bot.http:
         await bot.http.close()
-
-    import sys
-    import os
-    os.execv(sys.executable, [sys.executable] + sys.argv)
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def logs(ctx):
-    try:
-        result = subprocess.run(
-            ['journalctl', '-u', 'odin.service', '-n', '20', '--no-pager'],
-            capture_output=True,
-            text=True
-        )
-        if result.returncode == 0:
-            logs = result.stdout.strip()
-            if not logs:
-                await ctx.send("No logs found for odin.service.")
-                return
-            if len(logs) > 1900:
-                logs = "..." + logs[-1900:]
-            await ctx.send(f"**Odin Service Logs**:\n```\n{logs}\n```")
-        else:
-            logger.error(f"Failed to fetch logs: {result.stderr}")
-            await ctx.send(f"Failed to fetch logs:\n```\n{result.stderr}\n```")
-    except Exception as e:
-        logger.error(f"Error fetching logs: {e}")
-        await ctx.send(f"Error fetching logs: {str(e)}")
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def install_deps(ctx):
-    await ctx.send("Installing dependencies from requirements.txt within the virtual environment...")
-    try:
-        venv_pip = '/root/Discord-Bots/Odin/venv/bin/pip'
-        result = subprocess.run(
-            [venv_pip, 'install', '-r', 'requirements.txt'],
-            cwd='/root/Discord-Bots/Odin',
-            capture_output=True,
-            text=True
-        )
-        if result.returncode == 0:
-            logger.info("Dependencies installed successfully.")
-            await ctx.send(f"Dependencies installed successfully:\n```\n{result.stdout}\n```")
-        else:
-            logger.error(f"Failed to install dependencies: {result.stderr}")
-            await ctx.send(f"Failed to install dependencies:\n```\n{result.stderr}\n```")
-            return
-
-        await ctx.send("Restarting Odin to apply changes...")
-        logger.info("Initiating bot restart after dependency installation.")
-
-        await bot.close()
-        if bot.http:
-            await bot.http.close()
-
-        import sys
-        import os
-        os.execv(sys.executable, [sys.executable] + sys.argv)
-    except Exception as e:
-        logger.error(f"Error during dependency installation or restart: {e}")
-        await ctx.send(f"Error during dependency installation or restart: {str(e)}")
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def rename(ctx, old_name: str, new_name: str):
-    if not re.match(r'^[a-zA-Z0-9_-]+$', new_name):
-        await ctx.send("New command name can only contain letters, numbers, underscores, or hyphens.")
-        return
-
-    try:
-        with open('functions.json', 'r') as f:
-            data = json.load(f)
-    except FileNotFoundError:
-        await ctx.send("Error: functions.json not found.")
-        return
-    except json.JSONDecodeError:
-        await ctx.send("Error: functions.json is invalid.")
-        return
-
-    command_found = False
-    cog_name = None
-
-    bot_commands = data.get("bot_commands", {})
-    if old_name in bot_commands:
-        description = bot_commands.pop(old_name)
-        bot_commands[new_name] = description
-        data["bot_commands"] = bot_commands
-        command_found = True
-
-    if not command_found:
-        cogs = data.get("cogs", {})
-        for cog, cog_data in cogs.items():
-            commands = cog_data.get("commands", {})
-            if old_name in commands:
-                description = commands.pop(old_name)
-                commands[new_name] = description
-                cog_data["commands"] = commands
-                cogs[cog] = cog_data
-                cog_name = cog
-                command_found = True
-                break
-
-    if not command_found:
-        await ctx.send(f"Command '{old_name}' not found in functions.json.")
-        return
-
-    if old_name in ["ping", "info", "help", "cmd_bank"]:
-        cog_name = "general"
-    elif old_name in ["update", "add_function", "enable_function", "disable_function", "logs", "install_deps", "rename", "change_prefix", "generate_cog", "execute", "sync_functions"]:
-        cog_name = None
-    elif old_name == "generate_cog":
-        cog_name = "generate_cog"
-
-    if cog_name and cog_name != "general":
-        if new_name != cog_name:
-            await ctx.send(f"Command name must match the cog file name '{cog_name}'.py for non-general cogs.")
-            return
-
-    for section in [data.get("bot_commands", {})] + [cog_data.get("commands", {}) for cog_data in data.get("cogs", {}).values()]:
-        if new_name in section:
-            await ctx.send(f"Command '{new_name}' already exists in functions.json.")
-            return
-
-    data["cogs"] = cogs
-
-    with open('functions.json', 'w') as f:
-        json.dump(data, f, indent=4)
-
-    if cog_name and cog_name != "general":
-        try:
-            if f'cogs.{cog_name}' in bot.extensions:
-                await bot.unload_extension(f'cogs.{cog_name}')
-                await bot.load_extension(f'cogs.{cog_name}')
-                logger.info(f"Reloaded cog {cog_name} after renaming command.")
-            await ctx.send(f"Renamed command '{old_name}' to '{new_name}'. Cog '{cog_name}' reloaded if enabled.")
-        except Exception as e:
-            logger.error(f"Failed to reload cog {cog_name}: {e}")
-            await ctx.send(f"Renamed command '{old_name}' to '{new_name}', but failed to reload cog '{cog_name}': {str(e)}")
-    else:
-        await ctx.send(f"Renamed command '{old_name}' to '{new_name}'. No cog reload needed.")
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def change_prefix(ctx):
-    prefix_options = ['!', '@', '#', '$', '%']
-    options_message = "Please select a new command prefix by replying with the number:\n"
-    for i, prefix in enumerate(prefix_options, 1):
-        options_message += f"{i}. {prefix}\n"
-    options_message += f"\nCurrent prefix: {bot.command_prefix}"
-
-    await ctx.send(options_message)
-
-    def check(msg):
-        return msg.author == ctx.author and msg.channel == ctx.channel and msg.content.isdigit()
-
-    try:
-        response = await bot.wait_for('message', check=check, timeout=60)
-        choice = int(response.content)
-
-        if 1 <= choice <= len(prefix_options):
-            new_prefix = prefix_options[choice - 1]
-            bot.command_prefix = new_prefix
-            try:
-                with open('config.json', 'r') as f:
-                    config_data = json.load(f)
-                config_data['prefix'] = new_prefix
-                with open('config.json', 'w') as f:
-                    json.dump(config_data, f, indent=4)
-                await ctx.send(f"Command prefix changed to `{new_prefix}`. Use `{new_prefix}help` for commands.")
-            except Exception as e:
-                logger.error(f"Failed to update config.json with new prefix: {e}")
-                await ctx.send(f"Changed prefix to `{new_prefix}`, but failed to save to config.json: {str(e)}")
-        else:
-            await ctx.send("Invalid selection. Please run the command again and choose a valid number.")
-    except asyncio.TimeoutError:
-        await ctx.send("Timed out waiting for your selection. Please run the command again.")
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def generate_cog(ctx):
-    """Generates a new cog file based on user input via DMs (admin)."""
-    try:
-        await ctx.author.send("Let's create a new cog. Please provide the cog name (letters, numbers, underscores, or hyphens, no spaces or special characters).")
-        await ctx.send("I’ve sent you a DM to start creating the cog.")
-    except discord.Forbidden:
-        logger.error(f"Failed to send DM to user {ctx.author.id}: DMs are disabled.")
-        await ctx.send("I couldn’t DM you. Please enable DMs from server members.")
-        return
-
-    def check(msg):
-        return msg.author == ctx.author and isinstance(msg.channel, discord.DMChannel)
-
-    try:
-        logger.info(f"Waiting for user {ctx.author.id} to provide cog name")
-        msg = await bot.wait_for('message', check=check, timeout=300)
-        cog_name = msg.content.strip()
-        if not re.match(r'^[a-zA-Z0-9_-]+$', cog_name) or cog_name.startswith('.'):
-            await ctx.author.send("Cog name can only contain letters, numbers, underscores, or hyphens, and cannot start with a period. Please try again with `!generate_cog`.")
-            return
-        if os.path.exists(f'./cogs/{cog_name}.py'):
-            await ctx.author.send(f"A cog named '{cog_name}' already exists. Please choose a different name or use `!add_function` to overwrite.")
-            return
-    except asyncio.TimeoutError:
-        logger.warning(f"Timed out waiting for user {ctx.author.id} to provide cog name")
-        await ctx.author.send("Timed out waiting for the cog name. Please use `!generate_cog` again.")
-        return
-
-    try:
-        await ctx.author.send("Please provide a brief description of what this cog does (e.g., 'Sends daily reminders').")
-        logger.info(f"Waiting for user {ctx.author.id} to provide description for '{cog_name}'")
-        msg = await bot.wait_for('message', check=check, timeout=300)
-        description = msg.content.strip()
-        if not description:
-            await ctx.author.send("Description cannot be empty. Please try again with `!generate_cog`.")
-            return
-    except asyncio.TimeoutError:
-        logger.warning(f"Timed out waiting for user {ctx.author.id} to provide description")
-        await ctx.author.send("Timed out waiting for the description. Please use `!generate_cog` again.")
-        return
-
-    try:
-        await ctx.author.send("Please describe the functionality you want (e.g., 'A command to send a reminder every day at 8 AM'). This will be included as a comment in the code for future implementation.")
-        logger.info(f"Waiting for user {ctx.author.id} to provide functionality for '{cog_name}'")
-        msg = await bot.wait_for('message', check=check, timeout=300)
-        functionality = msg.content.strip()
-        if not functionality:
-            await ctx.author.send("Functionality cannot be empty. Please try again with `!generate_cog`.")
-            return
-    except asyncio.TimeoutError:
-        logger.warning(f"Timed out waiting for user {ctx.author.id} to provide functionality")
-        await ctx.author.send("Timed out waiting for the functionality. Please use `!generate_cog` again.")
-        return
-
-    confirmation_message = (
-        f"Please confirm the following details for the new cog:\n"
-        f"**Cog Name**: {cog_name}\n"
-        f"**Description**: {description}\n"
-        f"**Functionality**: {functionality}\n"
-        f"Reply with 'confirm' to proceed or 'cancel' to abort."
-    )
-    try:
-        await ctx.author.send(confirmation_message)
-        logger.info(f"Waiting for user {ctx.author.id} to confirm details for '{cog_name}'")
-        msg = await bot.wait_for('message', check=check, timeout=300)
-        response = msg.content.strip().lower()
-        if response != 'confirm':
-            await ctx.author.send("Cog creation cancelled. Use `!generate_cog` to start over.")
-            return
-    except asyncio.TimeoutError:
-        logger.warning(f"Timed out waiting for user {ctx.author.id} to confirm")
-        await ctx.author.send("Timed out waiting for confirmation. Please use `!generate_cog` again.")
-        return
-
-    cog_code = f"""from discord.ext import commands
-
-class {cog_name.capitalize()}(commands.Cog):
-    \"\"\"{description}\"\"\"
-    def __init__(self, bot):
-        self.bot = bot
-
-    @commands.command(name='{cog_name}')
-    async def {cog_name}(self, ctx):
-        \"\"\"Placeholder command for {description.lower()}\"\"\"
-        # TODO: Implement functionality: {functionality}
-        await ctx.send('This is a placeholder command for {cog_name}. Functionality to be implemented.')
-
-async def setup(bot):
-    await bot.add_cog({cog_name.capitalize()}(bot))
-"""
-
-    try:
-        with open(f'./cogs/{cog_name}.py', 'w') as f:
-            f.write(cog_code)
-        logger.info(f"Saved cog file: cogs/{cog_name}.py on the DigitalOcean Droplet")
-    except Exception as e:
-        logger.error(f"Failed to write file cogs/{cog_name}.py: {str(e)}")
-        await ctx.author.send(f"Failed to save the cog file due to an error: {str(e)}")
-        return
-
-    try:
-        with open('functions.json', 'r') as f:
-            data = json.load(f)
-    except FileNotFoundError:
-        data = {"cogs": {}, "bot_commands": {}}
-    except json.JSONDecodeError:
-        logger.error("Invalid JSON in functions.json. Initializing with empty data.")
-        data = {"cogs": {}, "bot_commands": {}}
-
-    data["cogs"][cog_name] = {
-        "commands": {
-            cog_name: description
-        }
-    }
-    with open('functions.json', 'w') as f:
-        json.dump(data, f, indent=4)
-    logger.info(f"Registered cog '{cog_name}' in functions.json")
-
-    try:
-        await bot.load_extension(f'cogs.{cog_name}')
-        logger.info(f"Enabled and loaded cog for guild {ctx.guild.id}: cogs.{cog_name}")
-        await ctx.author.send(f"Enabled and loaded cog '{cog_name}' for this server.")
-    except Exception as e:
-        logger.error(f"Failed to load cog {cog_name} for guild {ctx.guild.id}: {e}")
-        await ctx.send(f"Failed to load cog '{cog_name}'. Check the code for errors.")
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def execute(ctx, *, command: str):
-    if ctx.author.id != ALLOWED_USER_ID:
-        await ctx.send("Sorry, you are not authorized to use this command.")
-        return
-
-    if not command:
-        await ctx.send("Please provide a command to execute.")
-        return
-
-    logger.info(f"Executing command '{command}' on behalf of user {ctx.author.id}")
-    try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            cwd='/root/Discord-Bots/Odin',
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        output = result.stdout
-        error = result.stderr
-        full_output = output + error if error else output
-        if not full_output:
-            full_output = "Command executed, but no output was returned."
-        if len(full_output) > 1900:
-            full_output = "..." + full_output[-1900:]
-        await ctx.send(f"**Command Output**:\n```\n{full_output}\n```")
-        logger.info(f"Command '{command}' executed successfully with output length: {len(full_output)}")
-    except subprocess.TimeoutExpired:
-        await ctx.send("Command execution timed out after 10 seconds.")
-        logger.error(f"Command '{command}' timed out after 10 seconds.")
-    except subprocess.SubprocessError as e:
-        await ctx.send(f"Error executing command: {str(e)}")
-        logger.error(f"Error executing command '{command}': {str(e)}")
-    except Exception as e:
-        await ctx.send(f"Unexpected error: {str(e)}")
-        logger.error(f"Unexpected error executing command '{command}': {str(e)}")
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def reload_cog(ctx, cog_name: str):
-    """Reload a cog (admin only)."""
-    if not re.match(r'^[a-zA-Z0-9_-]+$', cog_name) or cog_name.startswith('.'):
-        await ctx.send("Cog name can only contain letters, numbers, underscores, or hyphens, and cannot start with a period.")
-        return
-    cog_path = f'cogs.{cog_name}'
-    cog_file = f'./cogs/{cog_name}.py'
-    if not os.path.exists(cog_file):
-        await ctx.send(f"Cog file '{cog_file}' does not exist.")
-        return
-    try:
-        if cog_path in bot.extensions:
-            await bot.reload_extension(cog_path)
-        else:
-            await bot.load_extension(cog_path)
-        await ctx.send(f"Loaded/reloaded cog '{cog_name}'.")
-        logger.info(f"Loaded/reloaded cog {cog_path} by {ctx.author.name}")
-    except Exception as e:
-        await ctx.send(f"Failed to load/reload cog '{cog_name}': {str(e)}")
-        logger.error(f"Failed to load/reload cog {cog_path}: {str(e)}")
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def sync_functions(ctx):
-    """Rebuild functions.json to match loaded cogs (admin only)."""
-    try:
-        data = {"cogs": {}, "bot_commands": {}}
-        data["bot_commands"] = {
-            "update": "Restarts the bot (admin).",
-            "add_function": "Adds a new cog via DM (admin).",
-            "enable_function": "Enables a cog for the server (admin).",
-            "disable_function": "Disables a cog for the server (admin).",
-            "logs": "Displays the odin.service logs up to the maximum allowable length (admin).",
-            "install_deps": "Installs dependencies from requirements.txt within the venv and restarts (admin).",
-            "rename": "Renames a command in functions.json (admin).",
-            "change_prefix": "Changes the bot's command prefix (admin).",
-            "generate_cog": "Generates a new cog file based on user input via DMs (admin).",
-            "execute": "Executes a shell command on the server (admin, restricted).",
-            "sync_functions": "Rebuilds functions.json to match loaded cogs (admin)."
-        }
-
-        for cog_name, cog in bot.cogs.items():
-            cog_file = f'./cogs/{cog_name.lower()}.py'
-            if not os.path.exists(cog_file):
-                logger.warning(f"Cog {cog_name} loaded but file {cog_file} not found. Skipping.")
-                continue
-            commands = {}
-            for command in cog.get_commands():
-                commands[command.name] = command.description or f"Command {command.name} from {cog_name}."
-            data["cogs"][cog_name.lower()] = {"commands": commands}
-
-        with open('functions.json', 'w') as f:
-            json.dump(data, f, indent=4)
-        await ctx.send("Rebuilt functions.json to match loaded cogs.")
-        logger.info(f"Rebuilt functions.json by {ctx.author.name}")
-    except Exception as e:
-        await ctx.send(f"Failed to rebuild functions.json: {str(e)}")
-        logger.error(f"Failed to rebuild functions.json: {str(e)}")
-
-async def main():
-    try:
-        await bot.start(config['token'])
-    except Exception as e:
-        logger.error(f'Failed to start bot: {e}')
-        await bot.close()
-        await asyncio.sleep(5)
-        if bot.http:
-            await bot.http.close()
-        await main()
-
-if __name__ == '__main__':
-    asyncio.run(main())
