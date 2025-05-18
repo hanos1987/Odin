@@ -672,4 +672,89 @@ async def execute(ctx, *, command: str):
             full_output = "Command executed, but no output was returned."
         if len(full_output) > 1900:
             full_output = "..." + full_output[-1900:]
-        await ctx.send(f"**Command Output**:\n```\n
+        await ctx.send(f"**Command Output**:\n```\n{full_output}\n```")
+        logger.info(f"Command '{command}' executed successfully with output length: {len(full_output)}")
+    except subprocess.TimeoutExpired:
+        await ctx.send("Command execution timed out after 10 seconds.")
+        logger.error(f"Command '{command}' timed out after 10 seconds.")
+    except subprocess.SubprocessError as e:
+        await ctx.send(f"Error executing command: {str(e)}")
+        logger.error(f"Error executing command '{command}': {str(e)}")
+    except Exception as e:
+        await ctx.send(f"Unexpected error: {str(e)}")
+        logger.error(f"Unexpected error executing command '{command}': {str(e)}")
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def reload_cog(ctx, cog_name: str):
+    """Reload a cog (admin only)."""
+    if not re.match(r'^[a-zA-Z0-9_-]+$', cog_name) or cog_name.startswith('.'):
+        await ctx.send("Cog name can only contain letters, numbers, underscores, or hyphens, and cannot start with a period.")
+        return
+    cog_path = f'cogs.{cog_name}'
+    cog_file = f'./cogs/{cog_name}.py'
+    if not os.path.exists(cog_file):
+        await ctx.send(f"Cog file '{cog_file}' does not exist.")
+        return
+    try:
+        if cog_path in bot.extensions:
+            await bot.reload_extension(cog_path)
+        else:
+            await bot.load_extension(cog_path)
+        await ctx.send(f"Loaded/reloaded cog '{cog_name}'.")
+        logger.info(f"Loaded/reloaded cog {cog_path} by {ctx.author.name}")
+    except Exception as e:
+        await ctx.send(f"Failed to load/reload cog '{cog_name}': {str(e)}")
+        logger.error(f"Failed to load/reload cog {cog_path}: {str(e)}")
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def sync_functions(ctx):
+    """Rebuild functions.json to match loaded cogs (admin only)."""
+    try:
+        data = {"cogs": {}, "bot_commands": {}}
+        data["bot_commands"] = {
+            "update": "Restarts the bot (admin).",
+            "add_function": "Adds a new cog via DM (admin).",
+            "enable_function": "Enables a cog for the server (admin).",
+            "disable_function": "Disables a cog for the server (admin).",
+            "logs": "Displays the odin.service logs up to the maximum allowable length (admin).",
+            "install_deps": "Installs dependencies from requirements.txt within the venv and restarts (admin).",
+            "rename": "Renames a command in functions.json (admin).",
+            "change_prefix": "Changes the bot's command prefix (admin).",
+            "generate_cog": "Generates a new cog file based on user input via DMs (admin).",
+            "execute": "Executes a shell command on the server (admin, restricted).",
+            "sync_functions": "Rebuilds functions.json to match loaded cogs (admin)."
+        }
+
+        for cog_name, cog in bot.cogs.items():
+            cog_file = f'./cogs/{cog_name.lower()}.py'
+            if not os.path.exists(cog_file):
+                logger.warning(f"Cog {cog_name} loaded but file {cog_file} not found. Skipping.")
+                continue
+            commands = {}
+            for command in cog.get_commands():
+                commands[command.name] = command.description or f"Command {command.name} from {cog_name}."
+            data["cogs"][cog_name.lower()] = {"commands": commands}
+
+        with open('functions.json', 'w') as f:
+            json.dump(data, f, indent=4)
+        await ctx.send("Rebuilt functions.json to match loaded cogs.")
+        logger.info(f"Rebuilt functions.json by {ctx.author.name}")
+    except Exception as e:
+        await ctx.send(f"Failed to rebuild functions.json: {str(e)}")
+        logger.error(f"Failed to rebuild functions.json: {str(e)}")
+
+async def main():
+    try:
+        await bot.start(config['token'])
+    except Exception as e:
+        logger.error(f'Failed to start bot: {e}')
+        await bot.close()
+        await asyncio.sleep(5)
+        if bot.http:
+            await bot.http.close()
+        await main()
+
+if __name__ == '__main__':
+    asyncio.run(main())
